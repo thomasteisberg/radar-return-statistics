@@ -19,9 +19,11 @@ processing:
   max_workers: 30
 
 qc:
-  max_roll_deg: 2.0              # mask traces with |roll| above this (degrees)
-  max_heading_rate_deg_s: 1.0    # fallback if roll unavailable: mask turns by heading rate (deg/s)
-  min_traces_after_qc: 10        # skip frame entirely if fewer traces survive QC
+  max_heading_change_deg_per_km: 2.0  # mask traces with heading change above this (deg/km)
+  min_ice_thickness_m: null           # skip traces below this ice thickness (e.g. 500)
+  min_agl_m: null                     # skip traces where AGL is below this (e.g. 100)
+  min_bed_snr_db: null                # skip traces where bed SNR is below this (e.g. 5.0)
+  min_traces_after_qc: 10             # skip frame entirely if fewer traces survive QC
 
 store:
   backend: "s3"

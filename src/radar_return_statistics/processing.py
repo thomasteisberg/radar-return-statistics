@@ -5,6 +5,7 @@ import pandas as pd
 import scipy.constants
 import xarray as xr
 from xopr import OPRConnection
+from xopr import qc as xopr_qc
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,6 @@ BED_KEY = "standard:bottom"
 
 def extract_layer_peak_power(radar_ds, layer_twtt, margin_twtt):
     """Extract peak power (dB) and its TWTT within a margin around a layer pick."""
-    # Align slow_time coordinates
     t_start = np.minimum(radar_ds.slow_time.min(), layer_twtt.slow_time.min())
     t_end = np.maximum(radar_ds.slow_time.max(), layer_twtt.slow_time.max())
     layer_twtt = layer_twtt.sel(slow_time=slice(t_start, t_end))
@@ -26,7 +26,6 @@ def extract_layer_peak_power(radar_ds, layer_twtt, margin_twtt):
         fill_value=np.nan,
     )
 
-    # Mask to margin around layer pick
     start_twtt = layer_twtt - margin_twtt
     end_twtt = layer_twtt + margin_twtt
     data_within_margin = radar_ds.where(
@@ -34,7 +33,6 @@ def extract_layer_peak_power(radar_ds, layer_twtt, margin_twtt):
         drop=True,
     )
 
-    # Peak power in dB
     power_dB = 10 * np.log10(np.abs(data_within_margin.Data))
     peak_twtt_index = power_dB.argmax(dim="twtt")
     peak_twtt = power_dB.twtt[peak_twtt_index]
@@ -46,50 +44,27 @@ def extract_layer_peak_power(radar_ds, layer_twtt, margin_twtt):
     return peak_twtt, peak_power
 
 
-def _build_qc_mask(frame, qc_config):
-    """Build a boolean mask (True = pass QC) along slow_time.
+def _build_qc_checks(qc_config: dict) -> dict:
+    """Build xopr QC checks dict from config. Only includes enabled (non-null) checks."""
+    checks = {}
 
-    Uses roll angle if available, otherwise falls back to heading rate.
-    Returns None if no QC checks are configured.
-    """
-    mask = xr.ones_like(frame.slow_time, dtype=bool)
-    applied_any = False
+    val = qc_config.get("max_heading_change_deg_per_km")
+    if val is not None:
+        checks["heading_change"] = {"max_deg_per_km": val}
 
-    max_roll = qc_config.get("max_roll_deg")
-    max_heading_rate = qc_config.get("max_heading_rate_deg_s")
+    val = qc_config.get("min_ice_thickness_m")
+    if val is not None:
+        checks["ice_thickness_threshold"] = {"min_thickness_m": val}
 
-    if max_roll is not None and "Roll" in frame:
-        roll_deg = np.rad2deg(frame.Roll)
-        roll_ok = np.abs(roll_deg) <= max_roll
-        n_fail = int((~roll_ok).sum())
-        if n_fail > 0:
-            logger.debug("  QC roll: %d/%d traces exceed %.1f deg",
-                         n_fail, len(roll_ok), max_roll)
-        mask = mask & roll_ok
-        applied_any = True
-    elif max_heading_rate is not None and "Heading" in frame:
-        # Heading rate as fallback when roll is unavailable
-        heading_deg = np.rad2deg(frame.Heading)
-        # Compute time differences in seconds
-        dt = frame.slow_time.diff("slow_time").dt.total_seconds()
-        dheading = heading_deg.diff("slow_time")
-        # Wrap heading differences to [-180, 180]
-        dheading = (dheading + 180) % 360 - 180
-        heading_rate = np.abs(dheading / dt)
-        heading_ok = heading_rate <= max_heading_rate
-        # First trace has no rate — pass it
-        heading_ok = xr.concat(
-            [xr.DataArray(True, coords={"slow_time": frame.slow_time.values[0]}), heading_ok],
-            dim="slow_time",
-        )
-        n_fail = int((~heading_ok).sum())
-        if n_fail > 0:
-            logger.debug("  QC heading rate: %d/%d traces exceed %.1f deg/s",
-                         n_fail, len(heading_ok), max_heading_rate)
-        mask = mask & heading_ok
-        applied_any = True
+    val = qc_config.get("min_agl_m")
+    if val is not None:
+        checks["minimum_agl"] = {"min_agl_m": val}
 
-    return mask if applied_any else None
+    val = qc_config.get("min_bed_snr_db")
+    if val is not None:
+        checks["snr_bed_pick"] = {"min_snr_db": val}
+
+    return checks
 
 
 def process_frame(opr: OPRConnection, stac_item, config: dict) -> xr.Dataset | None:
@@ -99,11 +74,9 @@ def process_frame(opr: OPRConnection, stac_item, config: dict) -> xr.Dataset | N
     frame_id = stac_item.name if hasattr(stac_item, "name") else stac_item.get("id", "unknown")
 
     try:
-        # Load frame
         frame = opr.load_frame(stac_item, data_product=proc["data_product"])
         frame = frame.sortby("slow_time")
 
-        # Decimate: pick one trace per interval (no averaging)
         decimate_interval = proc.get("decimate_interval")
         if decimate_interval:
             interval = pd.Timedelta(decimate_interval)
@@ -116,7 +89,6 @@ def process_frame(opr: OPRConnection, stac_item, config: dict) -> xr.Dataset | N
                     last = times[idx]
             frame = frame.isel(slow_time=selected)
 
-        # Get layer picks
         try:
             layers = opr.get_layers(frame, include_geometry=False)
         except Exception:
@@ -129,9 +101,22 @@ def process_frame(opr: OPRConnection, stac_item, config: dict) -> xr.Dataset | N
                            frame_id, available)
             return None
 
-        # QC filtering — build mask but keep all traces
-        qc_mask = _build_qc_mask(frame, qc_config)
-        if qc_mask is not None:
+        # Add layer picks to frame so xopr QC checks can use them
+        for key in (SURFACE_KEY, BED_KEY):
+            pick = layers[key]["twtt"].reindex(
+                slow_time=frame.slow_time,
+                method="nearest",
+                tolerance=pd.Timedelta(seconds=5),
+                fill_value=np.nan,
+            )
+            frame[key] = pick
+
+        # Run xopr QC checks (picks already in frame, ensure_picks is a no-op)
+        qc_checks = _build_qc_checks(qc_config)
+        if qc_checks:
+            frame = xopr_qc.run_qc(frame, checks=qc_checks)
+            qc_mask = frame["qc"]
+
             n_pass = int(qc_mask.sum())
             n_total = len(qc_mask)
             min_traces = qc_config.get("min_traces_after_qc", 10)
@@ -141,39 +126,41 @@ def process_frame(opr: OPRConnection, stac_item, config: dict) -> xr.Dataset | N
                 return None
             if n_pass < n_total:
                 logger.info("Frame %s: QC filtered %d/%d traces", frame_id, n_total - n_pass, n_total)
+        else:
+            qc_mask = None
 
-        # Convert margin from meters to TWTT
-        speed_in_ice = scipy.constants.c / np.sqrt(proc["ice_permittivity"])
-        margin_twtt = proc["layer_margin_m"] / speed_in_ice
-
-        surface_layer = layers[SURFACE_KEY]
-        bed_layer = layers[BED_KEY]
-
-        # Extract surface and bed peak power
-        surface_twtt, surface_power = extract_layer_peak_power(
-            frame, surface_layer["twtt"], margin_twtt
-        )
-        bed_twtt, bed_power = extract_layer_peak_power(
-            frame, bed_layer["twtt"], margin_twtt
-        )
-
-        # Compute WGS84 elevations from frame Elevation and layer TWTT
-        # Surface elevation = aircraft_elevation - c/2 * surface_twtt
-        # Bed elevation = surface_elevation - v_ice/2 * (bed_twtt - surface_twtt)
         ice_permittivity = proc["ice_permittivity"]
         c = scipy.constants.c
         v_ice = c / np.sqrt(ice_permittivity)
+        margin_twtt = proc["layer_margin_m"] / v_ice
+
+        surface_twtt, surface_power = extract_layer_peak_power(
+            frame, layers[SURFACE_KEY]["twtt"], margin_twtt
+        )
+        bed_twtt, bed_power = extract_layer_peak_power(
+            frame, layers[BED_KEY]["twtt"], margin_twtt
+        )
 
         surface_elevation = frame.Elevation - (c / 2) * surface_twtt
         bed_elevation = surface_elevation - (v_ice / 2) * (bed_twtt - surface_twtt)
 
-        # Build qc_pass flag (default all True if no QC configured)
+        # Required surface SNR: surface-to-bed power ratio corrected for geometric spreading.
+        # Matches the RSSNR definition from https://github.com/thomasteisberg/required_surface_snr
+        r_surf = c * surface_twtt / 2  # one-way air range to surface (m)
+        ice_thickness = v_ice / 2 * (bed_twtt - surface_twtt)  # one-way ice thickness (m)
+        r_bed_eff = r_surf + ice_thickness / np.sqrt(ice_permittivity)
+        P_surf_lin = 10 ** (surface_power / 10)
+        P_bed_lin = 10 ** (bed_power / 10)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            required_surface_snr_dB = 10 * np.log10(
+                P_surf_lin * r_surf**2 / (P_bed_lin * r_bed_eff**2)
+            )
+
         if qc_mask is not None:
-            qc_pass = qc_mask.rename({"slow_time": "slow_time"})
+            qc_pass = qc_mask
         else:
             qc_pass = xr.ones_like(frame.slow_time, dtype=bool)
 
-        # Assemble output dataset
         metric_vars = {
             "surface_twtt": surface_twtt,
             "bed_twtt": bed_twtt,
@@ -181,9 +168,9 @@ def process_frame(opr: OPRConnection, stac_item, config: dict) -> xr.Dataset | N
             "bed_elevation": bed_elevation,
             "surface_power_dB": surface_power,
             "bed_power_dB": bed_power,
+            "required_surface_snr_dB": required_surface_snr_dB,
         }
 
-        # NaN out metrics where QC fails
         if qc_mask is not None:
             for name in metric_vars:
                 metric_vars[name] = metric_vars[name].where(qc_pass)
@@ -204,7 +191,7 @@ def process_frame(opr: OPRConnection, stac_item, config: dict) -> xr.Dataset | N
 
         n_qc_pass = int(qc_pass.sum())
         logger.info("Frame %s: processed successfully (%d traces, %d pass QC)",
-                     frame_id, len(ds.slow_time), n_qc_pass)
+                    frame_id, len(ds.slow_time), n_qc_pass)
         return ds
 
     except Exception:

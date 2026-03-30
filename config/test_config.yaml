@@ -19,8 +19,10 @@ processing:
   max_workers: 2
 
 qc:
-  max_roll_deg: 2.0
-  max_heading_rate_deg_s: 1.0
+  max_heading_change_deg_per_km: 2.0
+  min_ice_thickness_m: null
+  min_agl_m: null
+  min_bed_snr_db: null
   min_traces_after_qc: 10
 
 store:

@@ -12,6 +12,8 @@ Per-trace (resampled) values stored with `slow_time` dimension:
 * `bed_elevation` - bed WGS84 elevation from layer picks
 * `surface_power_dB` - surface peak power in dB
 * `bed_power_dB` - bed peak power in dB
+* `required_surface_snr_dB` - surface-to-bed power ratio corrected for geometric spreading (dB);
+  matches RSSNR definition from https://github.com/thomasteisberg/required_surface_snr
 * `frame_id` - source frame identifier
 
 Coordinates: `latitude`, `longitude`, `elevation`
