@@ -1,10 +1,10 @@
 import logging
-from pathlib import Path
 
 import numpy as np
 import icechunk
 import xarray as xr
 import zarr
+from xarray.coding.times import encode_cf_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,40 @@ def get_processed_frames(repo: icechunk.Repository) -> set[str]:
     return set()
 
 
+def _zarr_append(root: zarr.Group, ds: xr.Dataset) -> None:
+    """Append dataset to existing zarr group using zarr directly.
+
+    Bypasses xarray's to_zarr(append_dim=...) which fails when the existing
+    store has CF-time-encoded slow_time that xarray can't decode.
+    """
+    n_new = len(ds.slow_time)
+
+    # Collect all slow_time-dimensioned arrays
+    arrays: dict[str, np.ndarray] = {}
+    for name in ds.data_vars:
+        if ds[name].dims == ("slow_time",):
+            arrays[name] = ds[name].values
+    for name in ds.coords:
+        if name != "slow_time" and hasattr(ds.coords[name], "dims") and ds.coords[name].dims == ("slow_time",):
+            arrays[name] = ds.coords[name].values
+
+    # Encode slow_time to match the existing store's CF encoding
+    st_arr = root["slow_time"]
+    units = st_arr.attrs.get("units", "seconds since 1970-01-01")
+    calendar = st_arr.attrs.get("calendar", "proleptic_gregorian")
+    encoded_times, _, _ = encode_cf_datetime(ds.slow_time.values, units=units, calendar=calendar)
+    arrays["slow_time"] = np.asarray(encoded_times)
+
+    for name, data in arrays.items():
+        if name in root:
+            arr = root[name]
+            old_size = arr.shape[0]
+            arr.resize(old_size + n_new)
+            arr[old_size:] = data
+        # Variables present in new frames but not yet in store (e.g. required_surface_snr_dB)
+        # are silently skipped — they won't appear until a --reprocess run.
+
+
 def write_frame_results(
     session: icechunk.Session,
     frame_id: str,
@@ -55,15 +89,13 @@ def write_frame_results(
 ) -> None:
     """Write frame results to icechunk store, appending along slow_time dimension."""
     store = session.store
-
-    # Check if data already exists by looking for a zarr group
     root = zarr.open_group(store, mode="a")
     first_write = "surface_twtt" not in root
 
     if first_write:
         results_ds.to_zarr(store, mode="w")
     else:
-        results_ds.to_zarr(store, append_dim="slow_time")
+        _zarr_append(root, results_ds)
 
     # Track processed frame
     if "processed_frames" not in root:
