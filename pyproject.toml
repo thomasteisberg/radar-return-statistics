@@ -1,0 +1,27 @@
+[project]
+name = "radar-return-statistics"
+version = "0.1.0"
+description = "Extract per-frame radar return statistics from OPR archive, stored in icechunk"
+requires-python = ">=3.11"
+dependencies = [
+    "xopr",
+    "icechunk>=1.0.2",
+    "zarr>=3",
+    "xarray>=2025.1.1",
+    "numpy",
+    "scipy",
+    "pandas",
+    "geopandas",
+    "pyyaml",
+    "click",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/radar_return_statistics"]
+
+[tool.uv.sources]
+xopr = { path = "../xopr", editable = true }

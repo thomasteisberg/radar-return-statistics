@@ -1,0 +1,28 @@
+opr:
+  cache_dir: null
+
+region:
+  area: "antarctic"
+  name: ["David", "Drygalski"]
+  type: null
+  regions: "East"
+
+query:
+  collections: null
+  max_items: 3
+
+processing:
+  data_product: "CSARP_standard"
+  decimate_interval: "10s"
+  layer_margin_m: 50
+  ice_permittivity: 3.17
+  max_workers: 2
+
+qc:
+  max_roll_deg: 2.0
+  max_heading_rate_deg_s: 1.0
+  min_traces_after_qc: 10
+
+store:
+  backend: "local"
+  path: "outputs/icechunk_store"

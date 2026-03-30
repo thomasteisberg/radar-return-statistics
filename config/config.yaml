@@ -1,0 +1,30 @@
+opr:
+  cache_dir: null
+
+region:
+  area: "antarctic"
+  name: ["Thwaites", "Pine Island"]
+  type: null
+  regions: null
+
+query:
+  collections: null
+  max_items: null
+
+processing:
+  data_product: "CSARP_standard"
+  decimate_interval: "10s"
+  layer_margin_m: 50
+  ice_permittivity: 3.17
+  max_workers: 30
+
+qc:
+  max_roll_deg: 2.0              # mask traces with |roll| above this (degrees)
+  max_heading_rate_deg_s: 1.0    # fallback if roll unavailable: mask turns by heading rate (deg/s)
+  min_traces_after_qc: 10        # skip frame entirely if fewer traces survive QC
+
+store:
+  backend: "s3"
+  s3_bucket: "opr-radar-metrics"
+  s3_prefix: "icechunk/test"
+  s3_region: "us-west-2"
