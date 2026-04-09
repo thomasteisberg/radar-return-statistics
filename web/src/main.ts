@@ -1,7 +1,7 @@
-import { IcechunkStore } from "icechunk-js";
+import { IcechunkStore } from "@carbonplan/icechunk-js";
 import { VARIABLES, VARIABLE_DEPS } from "./config";
 import { createColorScale, drawLegend } from "./colormap";
-import { getCommitLog, CommitEntry } from "./history";
+import { getCommitLog, CommitEntry, formatDate } from "./history";
 import { initMap, renderPoints, fitToData, setBasemap } from "./map";
 import { openStore, loadEssentials, loadVariables, StoreData } from "./store";
 
@@ -129,15 +129,7 @@ function renderHistoryList() {
 
     const metaSpan = document.createElement("span");
     metaSpan.className = "commit-meta";
-    const dateStr = entry.parsedDate
-      ? entry.parsedDate.toLocaleDateString("en-US", {
-          year: "numeric", month: "short", day: "numeric",
-          hour: "2-digit", minute: "2-digit",
-        })
-      : null;
-    metaSpan.textContent = dateStr
-      ? `${dateStr} | ${entry.id.slice(0, 8)}...`
-      : entry.id.slice(0, 8) + "...";
+    metaSpan.textContent = `${formatDate(entry.date)} | ${entry.id.slice(0, 8)}...`;
 
     li.appendChild(msgSpan);
     li.appendChild(metaSpan);

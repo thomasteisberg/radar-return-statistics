@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Radar Return Statistics</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        display: flex;
+        height: 100vh;
+        background: #1a1a2e;
+        color: #e0e0e0;
+      }
+
+      #sidebar {
+        width: 320px;
+        min-width: 320px;
+        background: #16213e;
+        border-right: 1px solid #0f3460;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+
+      #sidebar h1 {
+        font-size: 16px;
+        padding: 16px;
+        border-bottom: 1px solid #0f3460;
+        color: #e0e0e0;
+      }
+
+      .sidebar-section {
+        padding: 12px 16px;
+        border-bottom: 1px solid #0f3460;
+      }
+
+      .sidebar-section h2 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #888;
+        margin-bottom: 8px;
+      }
+
+      #basemap-select,
+      #variable-select {
+        width: 100%;
+        padding: 8px;
+        background: #1a1a2e;
+        color: #e0e0e0;
+        border: 1px solid #0f3460;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      #status {
+        padding: 8px 16px;
+        font-size: 12px;
+        color: #888;
+      }
+
+      #history-list {
+        list-style: none;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      #history-list li {
+        padding: 8px 12px;
+        border-bottom: 1px solid #0f3460;
+        cursor: pointer;
+        font-size: 12px;
+        transition: background 0.15s;
+      }
+
+      #history-list li:hover {
+        background: #1a1a2e;
+      }
+
+      #history-list li.active {
+        background: #0f3460;
+      }
+
+      #history-list li .commit-msg {
+        color: #e0e0e0;
+        display: block;
+        margin-bottom: 2px;
+      }
+
+      #history-list li .commit-meta {
+        color: #666;
+        font-size: 11px;
+      }
+
+      #map-container {
+        flex: 1;
+        position: relative;
+      }
+
+      #map {
+        width: 100%;
+        height: 100%;
+      }
+
+      #loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(26, 26, 46, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        font-size: 16px;
+        color: #e0e0e0;
+      }
+
+      #loading-overlay.hidden {
+        display: none;
+      }
+
+      #color-legend {
+        position: absolute;
+        bottom: 30px;
+        right: 10px;
+        z-index: 999;
+        background: rgba(22, 33, 62, 0.92);
+        border: 1px solid #0f3460;
+        border-radius: 4px;
+        padding: 8px 12px;
+        font-size: 12px;
+        min-width: 60px;
+      }
+
+      #color-legend .legend-title {
+        font-size: 11px;
+        color: #888;
+        margin-bottom: 4px;
+      }
+
+      #color-legend .legend-bar {
+        width: 20px;
+        height: 150px;
+        margin: 0 auto;
+      }
+
+      #color-legend .legend-labels {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        height: 150px;
+        margin-left: 4px;
+        font-size: 11px;
+      }
+
+      #color-legend .legend-row {
+        display: flex;
+        align-items: flex-start;
+      }
+
+      .leaflet-container {
+        background: #1a1a2e;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="sidebar">
+      <h1>Radar Return Statistics</h1>
+      <div class="sidebar-section">
+        <h2>Basemap</h2>
+        <select id="basemap-select">
+          <option value="Blue Marble">Blue Marble</option>
+          <option value="Land / Water">Land / Water</option>
+        </select>
+      </div>
+      <div class="sidebar-section">
+        <h2>Variable</h2>
+        <select id="variable-select">
+          <option value="rssnr">Required Surface SNR [dB]</option>
+          <option value="surface_elevation">Surface Elevation [m WGS84]</option>
+          <option value="bed_elevation">Bed Elevation [m WGS84]</option>
+          <option value="surface_power_dB">Surface Power [dB]</option>
+          <option value="bed_power_dB">Bed Power [dB]</option>
+          <option value="surface_twtt">Surface TWTT [s]</option>
+          <option value="bed_twtt">Bed TWTT [s]</option>
+        </select>
+      </div>
+      <div class="sidebar-section">
+        <h2>Version History</h2>
+        <ul id="history-list">
+          <li class="commit-meta">Loading...</li>
+        </ul>
+      </div>
+      <div id="status">Initializing...</div>
+    </div>
+    <div id="map-container">
+      <div id="map"></div>
+      <div id="loading-overlay">Loading data from S3...</div>
+      <div id="color-legend">
+        <div class="legend-title" id="legend-title"></div>
+        <div class="legend-row">
+          <canvas
+            id="legend-bar"
+            class="legend-bar"
+            width="20"
+            height="150"
+          ></canvas>
+          <div class="legend-labels">
+            <span id="legend-max"></span>
+            <span id="legend-mid"></span>
+            <span id="legend-min"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

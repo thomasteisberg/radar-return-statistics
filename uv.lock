@@ -2327,7 +2327,7 @@ requires-dist = [
     { name = "pyyaml" },
     { name = "scipy" },
     { name = "xarray", specifier = ">=2025.1.1" },
-    { name = "xopr", editable = "../xopr" },
+    { name = "xopr", git = "https://github.com/thomasteisberg/xopr?branch=thomas%2Fqc_and_extras" },
     { name = "zarr", specifier = ">=3" },
 ]
 
@@ -2622,7 +2622,8 @@ wheels = [
 
 [[package]]
 name = "xopr"
-source = { editable = "../xopr" }
+version = "0.4.4.dev19+gba83123e8"
+source = { git = "https://github.com/thomasteisberg/xopr?branch=thomas%2Fqc_and_extras#ba83123e856f1a4438c5c88cbf55b4d313faeea4" }
 dependencies = [
     { name = "aiohttp" },
     { name = "antimeridian" },
@@ -2646,67 +2647,6 @@ dependencies = [
     { name = "shapely" },
     { name = "xarray" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiohttp" },
-    { name = "antimeridian", specifier = ">=0.4.3" },
-    { name = "coiled", marker = "extra == 'docs'", specifier = ">=1.117.0" },
-    { name = "dask", extras = ["distributed"] },
-    { name = "dask", extras = ["distributed"], marker = "extra == 'docs'" },
-    { name = "duckdb", specifier = ">=1.0.0" },
-    { name = "flake8", marker = "extra == 'test'" },
-    { name = "fsspec" },
-    { name = "geopandas" },
-    { name = "geoviews" },
-    { name = "h5netcdf" },
-    { name = "h5py", specifier = ">=3.9" },
-    { name = "haversine", specifier = ">=2.8.0" },
-    { name = "hdf5storage", specifier = ">=0.2.2" },
-    { name = "hvplot", marker = "extra == 'docs'" },
-    { name = "ipykernel", marker = "extra == 'docs'" },
-    { name = "jupyter", marker = "extra == 'docs'" },
-    { name = "jupyter-bokeh", marker = "extra == 'docs'" },
-    { name = "jupyterlab", marker = "extra == 'docs'" },
-    { name = "matplotlib" },
-    { name = "mystmd", marker = "extra == 'docs'" },
-    { name = "numpy" },
-    { name = "omegaconf", marker = "extra == 'bench'" },
-    { name = "omegaconf", marker = "extra == 'stac'" },
-    { name = "omegaconf", marker = "extra == 'test'" },
-    { name = "pdoc", marker = "extra == 'docs'", specifier = ">=14.0.0" },
-    { name = "platformdirs" },
-    { name = "pyarrow" },
-    { name = "pyarrow", marker = "extra == 'bench'" },
-    { name = "pyarrow", marker = "extra == 'stac'" },
-    { name = "pyarrow", marker = "extra == 'test'" },
-    { name = "pyopenssl", specifier = "<24" },
-    { name = "pystac", marker = "extra == 'bench'" },
-    { name = "pystac", marker = "extra == 'stac'" },
-    { name = "pystac", marker = "extra == 'test'" },
-    { name = "pytest", marker = "extra == 'bench'" },
-    { name = "pytest", marker = "extra == 'test'" },
-    { name = "pytest-codspeed", marker = "extra == 'bench'", specifier = ">=3.0" },
-    { name = "pytest-cov", marker = "extra == 'test'" },
-    { name = "requests" },
-    { name = "rioxarray", marker = "extra == 'docs'" },
-    { name = "rustac", specifier = ">=0.6.0" },
-    { name = "scipy" },
-    { name = "shapely" },
-    { name = "stac-asset", marker = "extra == 'bench'" },
-    { name = "stac-asset", marker = "extra == 'stac'" },
-    { name = "stac-asset", marker = "extra == 'test'" },
-    { name = "stac-fastapi-geoparquet", extras = ["serve"], marker = "extra == 'bench'" },
-    { name = "stac-fastapi-geoparquet", extras = ["serve"], marker = "extra == 'stac'" },
-    { name = "stac-fastapi-geoparquet", extras = ["serve"], marker = "extra == 'test'" },
-    { name = "stac-geoparquet", marker = "extra == 'bench'" },
-    { name = "stac-geoparquet", marker = "extra == 'stac'" },
-    { name = "stac-geoparquet", marker = "extra == 'test'" },
-    { name = "stac-validator", marker = "extra == 'test'" },
-    { name = "verde", marker = "extra == 'docs'" },
-    { name = "xarray", specifier = ">=2024.10.0" },
-]
-provides-extras = ["bench", "docs", "stac", "test"]
 
 [[package]]
 name = "xyzservices"

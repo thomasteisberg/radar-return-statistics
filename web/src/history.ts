@@ -1,70 +1,45 @@
-import { IcechunkStore } from "icechunk-js";
+import { Repository, HttpStorage, encodeObjectId12 } from "@carbonplan/icechunk-js";
 import { STORE_URL } from "./config";
 
 export interface CommitEntry {
   id: string;
-  parentId: string | null;
+  parentId: Uint8Array | null;
   message: string;
-  timestamp: string;
-  parsedDate: Date | null;
+  date: Date;
 }
 
-function parseIcechunkDate(iso: string): Date | null {
-  // icechunk-js bug: flushedAt is stored as microseconds since Unix epoch
-  // but passed directly to new Date() which expects milliseconds, giving
-  // dates in year ~58000. Fix: divide getTime() by 1000.
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return null;
-  if (d.getFullYear() <= 3000) return d;
-  return new Date(d.getTime() / 1000);
-}
-
-// Icechunk uses this as the parent of the very first commit
 const INITIAL_COMMIT_SENTINEL = "1CECHNKREP0F1RSTCMT0";
 
 export async function getCommitLog(): Promise<CommitEntry[]> {
+  const storage = new HttpStorage(STORE_URL);
+  const repo = await Repository.open({ storage });
+  let session = await repo.checkoutBranch("main");
   const log: CommitEntry[] = [];
-  let ref: string | undefined = "main";
-  let snapshotId: string | undefined;
-  const maxDepth = 100; // safety limit
+  const maxDepth = 100;
 
   for (let i = 0; i < maxDepth; i++) {
+    const id = encodeObjectId12(session.getSnapshotId());
+    const date = session.getFlushedAt();
+    const message = session.snapshot.message;
+    const parentId: Uint8Array | null = (session as any).snapshot.parentId ?? null;
+
+    log.push({ id, parentId, message, date });
+
+    if (!parentId) break;
+    if (encodeObjectId12(parentId) === INITIAL_COMMIT_SENTINEL) break;
+
     try {
-      const store = await IcechunkStore.open(
-        STORE_URL,
-        snapshotId ? { snapshot: snapshotId } : { ref: ref! }
-      );
-      const snapshot = store.getSnapshot();
-      if (!snapshot) break;
-      log.push({
-        id: snapshot.id,
-        parentId: snapshot.parentId ?? null,
-        message: snapshot.message,
-        timestamp: snapshot.flushedAt,
-        parsedDate: parseIcechunkDate(snapshot.flushedAt),
-      });
-      if (
-        !snapshot.parentId ||
-        snapshot.parentId === INITIAL_COMMIT_SENTINEL
-      ) {
-        break;
-      }
-      snapshotId = snapshot.parentId;
-      ref = undefined;
+      session = await repo.checkoutSnapshot(parentId);
     } catch {
       break;
     }
   }
+
   return log;
 }
 
-export function formatTimestamp(iso: string): string {
-  const d = new Date(iso);
-  // Guard against bogus timestamps from icechunk
-  if (isNaN(d.getTime()) || d.getFullYear() > 3000) {
-    return "unknown time";
-  }
-  return d.toLocaleDateString("en-US", {
+export function formatDate(date: Date): string {
+  return date.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",

@@ -25,4 +25,4 @@ build-backend = "hatchling.build"
 packages = ["src/radar_return_statistics"]
 
 [tool.uv.sources]
-xopr = { path = "../xopr", editable = true }
+xopr = { git = "https://github.com/thomasteisberg/xopr", branch = "thomas/qc_and_extras" }

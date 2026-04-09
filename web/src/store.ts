@@ -1,4 +1,4 @@
-import { IcechunkStore } from "icechunk-js";
+import { IcechunkStore } from "@carbonplan/icechunk-js";
 import * as zarr from "zarrita";
 import { STORE_URL, C, ICE_PERMITTIVITY } from "./config";
 
@@ -11,7 +11,7 @@ export interface StoreData {
 }
 
 export async function openStore(snapshotId?: string): Promise<IcechunkStore> {
-  const opts = snapshotId ? { snapshot: snapshotId } : { ref: "main" };
+  const opts = snapshotId ? { snapshot: snapshotId } : { branch: "main" };
   return IcechunkStore.open(STORE_URL, opts);
 }
 
@@ -19,7 +19,8 @@ async function loadArray(
   store: IcechunkStore,
   name: string
 ): Promise<zarr.Chunk<zarr.DataType>> {
-  const arr = await zarr.open(store.resolve(name), { kind: "array" });
+  const root = zarr.root(store);
+  const arr = await zarr.open(root.resolve(`/${name}`), { kind: "array" });
   return zarr.get(arr);
 }
 
