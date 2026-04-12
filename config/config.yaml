@@ -3,9 +3,7 @@ opr:
 
 region:
   area: "antarctic"
-  name: ["Thwaites", "Pine_Island"]
-  type: null
-  regions: null
+  subregion: "G-H"
 
 query:
   collections: ["2012_Antarctica_DC8"]
@@ -16,17 +14,17 @@ processing:
   decimate_interval: "10s"
   layer_margin_m: 50
   ice_permittivity: 3.17
-  max_workers: 30
+  max_workers: 20
 
 qc:
   max_heading_change_deg_per_km: 2.0  # mask traces with heading change above this (deg/km)
-  min_ice_thickness_m: null           # skip traces below this ice thickness (e.g. 500)
-  min_agl_m: null                     # skip traces where AGL is below this (e.g. 100)
+  min_ice_thickness_m: 100           # skip traces below this ice thickness (e.g. 500)
+  min_agl_m: 50                     # skip traces where AGL is below this (e.g. 100)
   min_bed_snr_db: null                # skip traces where bed SNR is below this (e.g. 5.0)
-  min_traces_after_qc: 10             # skip frame entirely if fewer traces survive QC
+  min_traces_after_qc: 50             # skip frame entirely if fewer traces survive QC
 
 store:
   backend: "s3"
   s3_bucket: "opr-radar-metrics"
-  s3_prefix: "icechunk/test"
+  s3_prefix: "icechunk/ase"
   s3_region: "us-west-2"
