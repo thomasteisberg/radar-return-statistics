@@ -104,14 +104,15 @@ def list_collections(ctx):
 @click.argument("collections", nargs=-1, required=True)
 @click.option("--reprocess", is_flag=True, help="Reprocess all frames in selected collections")
 @click.option("--max-items", type=int, default=None, help="Limit frames per collection")
+@click.option("--message", "-m", default=None, help="Custom commit message")
 @click.pass_context
-def process_collections(ctx, collections: tuple[str, ...], reprocess: bool, max_items: int | None):
+def process_collections(ctx, collections: tuple[str, ...], reprocess: bool, max_items: int | None, message: str | None):
     """Process one or more collections by name."""
     config = ctx.obj["config"]
     config["query"]["collections"] = list(collections)
     if max_items is not None:
         config["query"]["max_items"] = max_items
-    run(config=config, reprocess=reprocess)
+    run(config=config, reprocess=reprocess, commit_message=message)
 
 
 if __name__ == "__main__":

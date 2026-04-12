@@ -1,5 +1,5 @@
 export const STORE_URL =
-  "https://opr-radar-metrics.s3.us-west-2.amazonaws.com/icechunk/test/";
+  "https://opr-radar-metrics.s3.us-west-2.amazonaws.com/icechunk/ase/";
 
 export const ICE_PERMITTIVITY = 3.17;
 export const C = 299792458; // speed of light m/s

@@ -89,7 +89,7 @@ def _process_frame_worker(stac_item_row, config):
     return process_frame(opr, stac_item_row, config)
 
 
-def run(config_path: str | None = None, *, config: dict | None = None, reprocess: bool = False) -> None:
+def run(config_path: str | None = None, *, config: dict | None = None, reprocess: bool = False, commit_message: str | None = None) -> None:
     """Main pipeline: query frames, process new ones, store results in icechunk."""
     if config is None:
         config = load_config(config_path)
@@ -167,6 +167,14 @@ def run(config_path: str | None = None, *, config: dict | None = None, reprocess
     # Commit
     n_frames = len(results)
     n_traces = sum(len(ds.slow_time) for _, ds in results)
-    message = f"Processed {n_frames} frames ({n_traces} traces)"
+    summary = f"Processed {n_frames} frames ({n_traces} traces)"
+    if commit_message:
+        message = f"{commit_message}\n\n{summary}"
+    else:
+        collections = config["query"].get("collections")
+        if collections:
+            message = f"{', '.join(collections)}: {summary}"
+        else:
+            message = summary
     store.commit_session(session, message)
     logger.info("Done: %s", message)
