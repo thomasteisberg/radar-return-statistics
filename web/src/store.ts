@@ -6,6 +6,7 @@ export interface StoreData {
   latitude: Float64Array;
   longitude: Float64Array;
   qcPass: Int8Array | null;
+  frameId: string[] | null;
   variables: Record<string, Float64Array>;
   numTraces: number;
 }
@@ -41,6 +42,28 @@ function toInt8Array(chunk: zarr.Chunk<zarr.DataType>): Int8Array {
   return new Int8Array(data as unknown as ArrayLike<number>);
 }
 
+// Load frame IDs via frame_index (uint16 per trace) + frame_names group attribute.
+// The native frame_id array uses zarr-python v3's numpy.str_ dtype which
+// zarrita cannot parse. Run scripts/add_frame_index.py once to populate these.
+async function loadFrameIds(store: IcechunkStore): Promise<string[] | null> {
+  // Load frame_names from the root group attributes
+  const rootGrp = await zarr.open(zarr.root(store), { kind: "group" });
+  const frameNames = (rootGrp.attrs as Record<string, unknown>)[
+    "frame_names"
+  ] as string[] | undefined;
+  if (!frameNames?.length) return null;
+
+  // Load per-trace frame index
+  const idxArr = await zarr.open(
+    zarr.root(store).resolve("/frame_index"),
+    { kind: "array" }
+  );
+  const chunk = await zarr.get(idxArr);
+  const indices = chunk.data as Uint16Array;
+
+  return Array.from(indices, (i) => frameNames[i] ?? "unknown");
+}
+
 export async function loadEssentials(store: IcechunkStore): Promise<StoreData> {
   const [latChunk, lonChunk] = await Promise.all([
     loadArray(store, "latitude"),
@@ -58,7 +81,14 @@ export async function loadEssentials(store: IcechunkStore): Promise<StoreData> {
     // qc_pass may not exist
   }
 
-  return { latitude, longitude, qcPass, variables: {}, numTraces: latitude.length };
+  let frameId: string[] | null = null;
+  try {
+    frameId = await loadFrameIds(store);
+  } catch (err) {
+    console.warn("frame_id not loaded:", err);
+  }
+
+  return { latitude, longitude, qcPass, frameId, variables: {}, numTraces: latitude.length };
 }
 
 export async function loadVariables(

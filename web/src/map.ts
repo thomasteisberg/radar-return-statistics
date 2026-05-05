@@ -9,7 +9,7 @@ const PROJ_DEF =
   "+proj=stere +lat_0=-90 +lat_ts=-71 +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs";
 proj4.defs("EPSG:3031", PROJ_DEF);
 
-const GIBS_RESOLUTIONS = [8192, 4096, 2048, 1024, 512, 256];
+const GIBS_RESOLUTIONS = [8192, 4096, 2048, 1024, 512, 256, 128, 64, 32];
 const GIBS_ORIGIN: [number, number] = [-4194304, 4194304];
 const GIBS_BOUNDS = L.bounds([-4194304, -4194304], [4194304, 4194304]);
 
@@ -28,13 +28,19 @@ let canvasOverlay: L.Layer | null = null;
 // Maximum points to render — subsample if over this
 const MAX_RENDER_POINTS = 20000;
 
+// Hover state
+let renderedPoints: Array<{ lat: number; lon: number; idx: number }> = [];
+let currentFrameIds: string[] | null = null;
+let tooltipEl: HTMLDivElement | null = null;
+const HOVER_THRESHOLD_PX = 12;
+
 export function initMap(containerId: string): L.Map {
   map = L.map(containerId, {
     crs: EPSG3031,
     center: [-76, 162],
     zoom: 2,
     minZoom: 0,
-    maxZoom: 5,
+    maxZoom: 8,
     preferCanvas: true,
   });
 
@@ -47,16 +53,73 @@ export function initMap(containerId: string): L.Map {
   baseLayers = {
     "Blue Marble": L.tileLayer(
       "https://gibs.earthdata.nasa.gov/wmts/epsg3031/best/BlueMarble_ShadedRelief_Bathymetry/default/2004-08-01/500m/{z}/{y}/{x}.jpeg",
-      { ...tileOpts, maxZoom: 4 }
+      { ...tileOpts, maxZoom: 8, maxNativeZoom: 4 }
     ),
     "Land / Water": L.tileLayer(
       "https://gibs.earthdata.nasa.gov/wmts/epsg3031/best/SCAR_Land_Water_Map/default/2024-01-01/250m/{z}/{y}/{x}.png",
-      { ...tileOpts, maxZoom: 5 }
+      { ...tileOpts, maxZoom: 8, maxNativeZoom: 5 }
     ),
   };
 
   baseLayers["Blue Marble"].addTo(map);
+
+  map.on("mousemove", (e: L.LeafletMouseEvent) => {
+    if (renderedPoints.length === 0) return;
+    const tooltip = getOrCreateTooltip();
+    const containerPt = e.containerPoint;
+
+    let minDist = Infinity;
+    let nearestPt: { lat: number; lon: number; idx: number } | null = null;
+    for (const pt of renderedPoints) {
+      const px = map.latLngToContainerPoint([pt.lat, pt.lon]);
+      const dx = px.x - containerPt.x;
+      const dy = px.y - containerPt.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < minDist) {
+        minDist = dist;
+        nearestPt = pt;
+      }
+    }
+
+    if (minDist <= HOVER_THRESHOLD_PX && nearestPt !== null) {
+      const label = currentFrameIds
+        ? (currentFrameIds[nearestPt.idx] ?? "unknown")
+        : `trace ${nearestPt.idx}`;
+      tooltip.textContent = label;
+      tooltip.style.display = "block";
+      tooltip.style.left = `${containerPt.x + 14}px`;
+      tooltip.style.top = `${containerPt.y - 28}px`;
+    } else {
+      tooltip.style.display = "none";
+    }
+  });
+
+  map.on("mouseout", () => {
+    if (tooltipEl) tooltipEl.style.display = "none";
+  });
+
   return map;
+}
+
+function getOrCreateTooltip(): HTMLDivElement {
+  if (!tooltipEl) {
+    tooltipEl = document.createElement("div");
+    Object.assign(tooltipEl.style, {
+      position: "absolute",
+      background: "rgba(0,0,0,0.72)",
+      color: "#fff",
+      padding: "3px 8px",
+      borderRadius: "4px",
+      fontSize: "12px",
+      fontFamily: "monospace",
+      pointerEvents: "none",
+      zIndex: "1000",
+      display: "none",
+      whiteSpace: "nowrap",
+    });
+    map.getContainer().appendChild(tooltipEl);
+  }
+  return tooltipEl;
 }
 
 export function setBasemap(name: string): void {
@@ -77,6 +140,7 @@ interface PointData {
   lat: number;
   lon: number;
   color: string;
+  idx: number;
 }
 
 // Custom canvas layer that draws all points in one pass
@@ -176,7 +240,13 @@ export function renderPoints(
     lat: data.latitude[i],
     lon: data.longitude[i],
     color: scale.getColor(values[i]),
+    idx: i,
   }));
+
+  // Update hover state
+  renderedPoints = points.map((p) => ({ lat: p.lat, lon: p.lon, idx: p.idx }));
+  currentFrameIds = data.frameId;
+  if (tooltipEl) tooltipEl.style.display = "none";
 
   canvasOverlay = new (CanvasPointsLayer as unknown as new (
     points: PointData[]

@@ -13,6 +13,7 @@ committed to icechunk with full version history.
   configuration reference, and generating visualizations
 - **[Accessing the data](docs/data_access.md)** -- reading the icechunk store from Python
   and JavaScript, variable descriptions, and working with version history
+- **[Interactive viewer](docs/viewer.md)** -- launching the browser-based map viewer (`cd web && npm run dev`)
 
 ## Quick start
 
