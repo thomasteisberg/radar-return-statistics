@@ -20,8 +20,9 @@ export async function getCommitLog(): Promise<CommitEntry[]> {
   for (let i = 0; i < maxDepth; i++) {
     const id = encodeObjectId12(session.getSnapshotId());
     const date = session.getFlushedAt();
-    const message = session.snapshot.message;
-    const parentId: Uint8Array | null = (session as any).snapshot.parentId ?? null;
+    const snapshot = (session as any).snapshot;
+    const message = snapshot.message;
+    const parentId: Uint8Array | null = snapshot.parentId ?? null;
 
     log.push({ id, parentId, message, date });
 
