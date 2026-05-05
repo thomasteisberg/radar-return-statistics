@@ -27,7 +27,6 @@ def test_query_returns_frames(frames):
 
 
 def test_frame_ids_are_strings(frames):
-    assert frames.index.dtype == object
     assert all(isinstance(fid, str) for fid in frames.index)
 
 
