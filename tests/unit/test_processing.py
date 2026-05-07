@@ -6,10 +6,55 @@ import scipy.constants
 
 from radar_return_statistics.processing import (
     _build_qc_checks,
+    compute_rssnr_dB,
     extract_layer_peak_power,
+    peak_power_in_window,
     process_frame,
 )
 from tests.conftest import BED_IDX, BED_VAL, SURF_IDX, SURF_VAL
+
+
+def test_peak_power_in_window_finds_max():
+    twtt = np.linspace(0, 1e-4, 1000)
+    data = np.ones(1000)
+    data[500] = 100.0  # peak at midpoint
+    result = peak_power_in_window(data, twtt, twtt[500], margin_twtt=5e-6)
+    np.testing.assert_allclose(result, 10 * np.log10(100.0))
+
+
+def test_peak_power_in_window_empty_returns_nan():
+    twtt = np.linspace(0, 1e-4, 100)
+    data = np.ones(100)
+    result = peak_power_in_window(data, twtt, pick_twtt=1.0, margin_twtt=1e-6)
+    assert np.isnan(result)
+
+
+def test_compute_rssnr_dB_matches_formula():
+    c = scipy.constants.c
+    ice_permittivity = 3.17
+    n = np.sqrt(ice_permittivity)
+    surf_twtt = 2e-6
+    bed_twtt = 22e-6
+    surf_power_dB = 10.0
+    bed_power_dB = -30.0
+
+    r_surf = c * surf_twtt / 2
+    ice_thickness = (c / n) / 2 * (bed_twtt - surf_twtt)
+    r_bed_eff = r_surf + ice_thickness / n
+    expected = surf_power_dB - bed_power_dB + 10 * np.log10(r_surf**2 / r_bed_eff**2)
+
+    result = compute_rssnr_dB(surf_power_dB, bed_power_dB, surf_twtt, bed_twtt, ice_permittivity)
+    np.testing.assert_allclose(result, expected, rtol=1e-10)
+
+
+def test_compute_rssnr_dB_accepts_arrays():
+    c = scipy.constants.c
+    ice_permittivity = 3.17
+    surf_twtt = np.array([2e-6, 3e-6])
+    bed_twtt = np.array([22e-6, 30e-6])
+    result = compute_rssnr_dB(10.0, -30.0, surf_twtt, bed_twtt, ice_permittivity)
+    assert result.shape == (2,)
+    assert np.all(np.isfinite(result))
 
 
 def test_extract_peak_finds_correct_twtt(synthetic_frame, synthetic_layers):

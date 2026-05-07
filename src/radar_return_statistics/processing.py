@@ -13,6 +13,33 @@ SURFACE_KEY = "standard:surface"
 BED_KEY = "standard:bottom"
 
 
+def peak_power_in_window(data_linear, twtt_axis, pick_twtt, margin_twtt):
+    """Peak power (dB) within margin_twtt of pick_twtt. Returns nan if window is empty."""
+    mask = (twtt_axis >= pick_twtt - margin_twtt) & (twtt_axis <= pick_twtt + margin_twtt)
+    if not mask.any():
+        return np.nan
+    return 10.0 * np.log10(data_linear[mask].max())
+
+
+def compute_rssnr_dB(surface_power_dB, bed_power_dB, surface_twtt, bed_twtt, ice_permittivity):
+    """
+    Geometry-corrected surface-to-bed SNR (dB), matching the required_surface_snr definition.
+
+    Corrects for differential one-way geometric spreading: surface range is the air path;
+    effective bed range adds the in-ice path reduced by sqrt(epsilon).
+    Works on scalars or numpy arrays.
+    """
+    c = scipy.constants.c
+    n = np.sqrt(ice_permittivity)
+    r_surf = c * surface_twtt / 2
+    ice_thickness = (c / n) / 2 * (bed_twtt - surface_twtt)
+    r_bed_eff = r_surf + ice_thickness / n
+    P_surf_lin = 10.0 ** (surface_power_dB / 10.0)
+    P_bed_lin = 10.0 ** (bed_power_dB / 10.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return 10.0 * np.log10(P_surf_lin * r_surf**2 / (P_bed_lin * r_bed_eff**2))
+
+
 def extract_layer_peak_power(radar_ds, layer_twtt, margin_twtt):
     """Extract peak power (dB) and its TWTT within a margin around a layer pick."""
     t_start = np.minimum(radar_ds.slow_time.min(), layer_twtt.slow_time.min())
@@ -146,15 +173,9 @@ def process_frame(opr: OPRConnection, stac_item, config: dict) -> xr.Dataset | N
 
         # Required surface SNR: surface-to-bed power ratio corrected for geometric spreading.
         # Matches the RSSNR definition from https://github.com/thomasteisberg/required_surface_snr
-        r_surf = c * surface_twtt / 2  # one-way air range to surface (m)
-        ice_thickness = v_ice / 2 * (bed_twtt - surface_twtt)  # one-way ice thickness (m)
-        r_bed_eff = r_surf + ice_thickness / np.sqrt(ice_permittivity)
-        P_surf_lin = 10 ** (surface_power / 10)
-        P_bed_lin = 10 ** (bed_power / 10)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            required_surface_snr_dB = 10 * np.log10(
-                P_surf_lin * r_surf**2 / (P_bed_lin * r_bed_eff**2)
-            )
+        required_surface_snr_dB = compute_rssnr_dB(
+            surface_power, bed_power, surface_twtt, bed_twtt, ice_permittivity
+        )
 
         if qc_mask is not None:
             qc_pass = qc_mask
