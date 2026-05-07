@@ -118,14 +118,14 @@ Drop traces where:
 
 ## Implementation
 
-### Script: `scripts/analysis/radargram_rssnr.py`
+### Script: `scripts/analysis/agasea_rssnr.py`
 
 Processes AGASEA radargrams to produce a flat CSV of (lat, lon, instrument, flight, RSSNR, ice_thickness), one row per QC-passing Results trace that is successfully matched to a radargram.
 
 ```
-uv run python scripts/analysis/radargram_rssnr.py \
+uv run python scripts/analysis/agasea_rssnr.py \
     /media/thomasteisberg/Data/MultisystemAGASEA \
-    --output outputs/agasea_radargram_rssnr.csv \
+    --output outputs/agasea_rssnr.csv \
     [-v]
 ```
 
@@ -138,27 +138,27 @@ Output columns:
 - `rssnr` — surface_power_dB − bed_power_dB (+ 39 if mixing gain channels)
 - `match_dist_m` — distance between Results trace and matched radargram trace
 
-### Script: `scripts/analysis/radargram_vs_opr.py`
+### Script: `scripts/analysis/agasea_comparison.py`
 
-Spatial comparison between the new radargram-derived RSSNR and OPR ASE. Mirrors `multisystem_vs_opr.py` but loads the CSV from `radargram_rssnr.py` instead of the Results NetCDF files.
+Spatial comparison between the new radargram-derived RSSNR and OPR ASE. Mirrors `multisystem_vs_opr.py` but loads the CSV from `agasea_rssnr.py` instead of the Results NetCDF files.
 
 ```
-uv run python scripts/analysis/radargram_vs_opr.py \
-    outputs/agasea_radargram_rssnr.csv \
+uv run python scripts/analysis/agasea_comparison.py \
+    outputs/agasea_rssnr.csv \
     config/config.yaml \
     --threshold 2000 \
-    --output outputs/radargram_vs_opr \
+    --output outputs/agasea_comparison \
     [-v]
 ```
 
 Reuse `match_datasets`, `make_map`, `make_scatter`, `make_differences`, `_summary_stats` from `multisystem_vs_opr.py` (refactor shared code into `src/` if significant overlap).
 
 Output files:
-- `outputs/radargram_vs_opr/matched_pairs.csv`
-- `outputs/radargram_vs_opr/summary.csv`
-- `outputs/radargram_vs_opr/map.png`
-- `outputs/radargram_vs_opr/scatter.png`
-- `outputs/radargram_vs_opr/differences.png`
+- `outputs/agasea_comparison/matched_pairs.csv`
+- `outputs/agasea_comparison/summary.csv`
+- `outputs/agasea_comparison/map.png`
+- `outputs/agasea_comparison/scatter.png`
+- `outputs/agasea_comparison/differences.png`
 
 ---
 
@@ -171,9 +171,9 @@ Before the OPR comparison, validate the radargram RSSNR by running AGASEA intern
 ## Milestones
 
 1. **Extractions complete** — all UTIG archives extracted; inspect one file to confirm `data_hi_gain` / `data_lo_gain` structure and value ranges
-2. **radargram_rssnr.py** — runs on one flight, produces plausible RSSNR values (−20 to +80 dB range)
+2. **agasea_rssnr.py** — runs on one flight, produces plausible RSSNR values (−20 to +80 dB range)
 3. **Internal crossover check** — HiCARS self-crossovers show RMS < 5 dB on RSSNR; if > 5 dB investigate gain channel handling
-4. **radargram_vs_opr.py** — produces matched pairs with N > 1000; examine scatter plot; expect tighter correlation than the prior Results-based comparison
+4. **agasea_comparison.py** — produces matched pairs with N > 1000; examine scatter plot; expect tighter correlation than the prior Results-based comparison
 
 ---
 
