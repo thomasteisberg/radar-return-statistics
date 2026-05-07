@@ -18,6 +18,7 @@ dependencies = [
     "pyyaml",
     "click",
     "cftime>=1.6.5",
+    "seaborn>=0.13.2",
 ]
 
 [build-system]

@@ -1,3 +1,8 @@
+# Large / local outputs
+outputs/icechunk_store/
+outputs/agasea_rssnr.csv
+.claude/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
