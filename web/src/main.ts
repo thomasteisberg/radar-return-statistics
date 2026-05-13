@@ -2,7 +2,15 @@ import { IcechunkStore } from "@carbonplan/icechunk-js";
 import { VARIABLES, VARIABLE_DEPS, STORES } from "./config";
 import { createColorScale, drawLegend } from "./colormap";
 import { getCommitLog, CommitEntry, formatDate } from "./history";
-import { initMap, renderPoints, fitToData, setBasemap } from "./map";
+import {
+  initMap,
+  renderPoints,
+  fitToData,
+  setBasemap,
+  destroyMap,
+  getHemisphere,
+  getBasemapNames,
+} from "./map";
 import { openStore, loadEssentials, loadVariables, StoreData } from "./store";
 
 const datasetSelect = document.getElementById(
@@ -28,7 +36,7 @@ const legendCanvas = document.getElementById("legend-bar") as HTMLCanvasElement;
 let currentData: StoreData | null = null;
 let currentStore: IcechunkStore | null = null;
 let currentSnapshotId: string | undefined;
-let currentStoreUrl: string = STORES[0].url;
+let currentStoreIndex: number = 0;
 let commitLog: CommitEntry[] = [];
 
 function setStatus(msg: string) {
@@ -101,7 +109,7 @@ async function loadSnapshot(snapshotId?: string) {
   currentStore = null;
 
   try {
-    currentStore = await openStore(currentStoreUrl, snapshotId);
+    currentStore = await openStore(STORES[currentStoreIndex].url, snapshotId);
     currentData = await loadEssentials(currentStore);
 
     // Load only the initially selected variable
@@ -150,15 +158,48 @@ function renderHistoryList() {
   }
 }
 
-async function init() {
-  initMap("map");
+function populateDatasetSelect() {
+  datasetSelect.innerHTML = "";
+  for (const store of STORES) {
+    const opt = document.createElement("option");
+    opt.value = store.label;
+    opt.textContent = store.label;
+    datasetSelect.appendChild(opt);
+  }
+}
 
-  async function switchDataset(storeUrl: string) {
-    currentStoreUrl = storeUrl;
+function populateBasemapSelect() {
+  basemapSelect.innerHTML = "";
+  for (const name of getBasemapNames()) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    basemapSelect.appendChild(opt);
+  }
+}
+
+async function init() {
+  populateDatasetSelect();
+  initMap("map", STORES[currentStoreIndex].hemisphere);
+  populateBasemapSelect();
+
+  async function switchDataset(index: number) {
+    const store = STORES[index];
+    if (!store) return;
+
+    // Rebuild the map if the new dataset is in a different hemisphere
+    // (Leaflet doesn't allow changing CRS on a live map).
+    if (store.hemisphere !== getHemisphere()) {
+      destroyMap();
+      initMap("map", store.hemisphere);
+      populateBasemapSelect();
+    }
+
+    currentStoreIndex = index;
     currentSnapshotId = undefined;
 
     historyList.innerHTML = '<li class="commit-meta">Loading...</li>';
-    const [logResult] = await Promise.allSettled([getCommitLog(storeUrl)]);
+    const [logResult] = await Promise.allSettled([getCommitLog(store.url)]);
     if (logResult.status === "fulfilled") {
       commitLog = logResult.value;
       renderHistoryList();
@@ -171,11 +212,10 @@ async function init() {
     await loadSnapshot();
   }
 
-  await switchDataset(STORES[0].url);
+  await switchDataset(currentStoreIndex);
 
   datasetSelect.addEventListener("change", () => {
-    const selected = STORES[datasetSelect.selectedIndex];
-    if (selected) switchDataset(selected.url);
+    switchDataset(datasetSelect.selectedIndex);
   });
 
   basemapSelect.addEventListener("change", () => {

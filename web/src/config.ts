@@ -1,16 +1,26 @@
+export type Hemisphere = "antarctic" | "arctic";
+
 export interface StoreConfig {
   label: string;
   url: string;
+  hemisphere: Hemisphere;
 }
 
 export const STORES: StoreConfig[] = [
   {
     label: "Amundsen Sea Embayment",
     url: "https://opr-radar-metrics.s3.us-west-2.amazonaws.com/icechunk/ase/",
+    hemisphere: "antarctic",
   },
   {
-    label: "UTIG BaslerJKB",
+    label: "UTIG",
     url: "https://opr-radar-metrics.s3.us-west-2.amazonaws.com/icechunk/utig/",
+    hemisphere: "antarctic",
+  },
+  {
+    label: "Greenland",
+    url: "https://opr-radar-metrics.s3.us-west-2.amazonaws.com/icechunk/greenland/",
+    hemisphere: "arctic",
   },
 ];
 

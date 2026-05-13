@@ -3,24 +3,71 @@ import "proj4leaflet";
 import proj4 from "proj4";
 import { ColorScale } from "./colormap";
 import { StoreData } from "./store";
+import { Hemisphere } from "./config";
 
-// EPSG:3031 Antarctic Polar Stereographic
-const PROJ_DEF =
-  "+proj=stere +lat_0=-90 +lat_ts=-71 +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs";
-proj4.defs("EPSG:3031", PROJ_DEF);
+interface HemisphereConfig {
+  epsg: string;
+  projDef: string;
+  // GIBS polar stereo tile grids share the same powers-of-two scheme.
+  resolutions: number[];
+  origin: [number, number];
+  bounds: L.Bounds;
+  center: [number, number];
+  zoom: number;
+  basemaps: Record<string, { url: string; maxNativeZoom: number }>;
+}
 
 const GIBS_RESOLUTIONS = [8192, 4096, 2048, 1024, 512, 256, 128, 64, 32];
 const GIBS_ORIGIN: [number, number] = [-4194304, 4194304];
 const GIBS_BOUNDS = L.bounds([-4194304, -4194304], [4194304, 4194304]);
 
-const EPSG3031 = new L.Proj.CRS("EPSG:3031", PROJ_DEF, {
-  resolutions: GIBS_RESOLUTIONS,
-  origin: GIBS_ORIGIN,
-  bounds: GIBS_BOUNDS,
-});
+const HEMISPHERES: Record<Hemisphere, HemisphereConfig> = {
+  antarctic: {
+    epsg: "EPSG:3031",
+    projDef:
+      "+proj=stere +lat_0=-90 +lat_ts=-71 +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs",
+    resolutions: GIBS_RESOLUTIONS,
+    origin: GIBS_ORIGIN,
+    bounds: GIBS_BOUNDS,
+    center: [-76, 162],
+    zoom: 2,
+    basemaps: {
+      "Blue Marble": {
+        url: "https://gibs.earthdata.nasa.gov/wmts/epsg3031/best/BlueMarble_ShadedRelief_Bathymetry/default/2004-08-01/500m/{z}/{y}/{x}.jpeg",
+        maxNativeZoom: 4,
+      },
+      "Land / Water": {
+        url: "https://gibs.earthdata.nasa.gov/wmts/epsg3031/best/SCAR_Land_Water_Map/default/2024-01-01/250m/{z}/{y}/{x}.png",
+        maxNativeZoom: 5,
+      },
+    },
+  },
+  arctic: {
+    epsg: "EPSG:3413",
+    projDef:
+      "+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs",
+    resolutions: GIBS_RESOLUTIONS,
+    origin: GIBS_ORIGIN,
+    bounds: GIBS_BOUNDS,
+    // Greenland-centric.
+    center: [72, -40],
+    zoom: 3,
+    basemaps: {
+      "Blue Marble": {
+        url: "https://gibs.earthdata.nasa.gov/wmts/epsg3413/best/BlueMarble_ShadedRelief_Bathymetry/default/2004-08-01/500m/{z}/{y}/{x}.jpeg",
+        maxNativeZoom: 4,
+      },
+      "Land / Water": {
+        url: "https://gibs.earthdata.nasa.gov/wmts/epsg3413/best/OSM_Land_Water_Map/default/250m/{z}/{y}/{x}.png",
+        maxNativeZoom: 5,
+      },
+    },
+  },
+};
 
 let map: L.Map;
 let baseLayers: Record<string, L.TileLayer>;
+let currentHemisphere: Hemisphere;
 
 // Canvas overlay for fast point rendering
 let canvasOverlay: L.Layer | null = null;
@@ -34,11 +81,21 @@ let currentFrameIds: string[] | null = null;
 let tooltipEl: HTMLDivElement | null = null;
 const HOVER_THRESHOLD_PX = 12;
 
-export function initMap(containerId: string): L.Map {
+export function initMap(containerId: string, hemisphere: Hemisphere): L.Map {
+  const cfg = HEMISPHERES[hemisphere];
+  currentHemisphere = hemisphere;
+
+  proj4.defs(cfg.epsg, cfg.projDef);
+  const crs = new L.Proj.CRS(cfg.epsg, cfg.projDef, {
+    resolutions: cfg.resolutions,
+    origin: cfg.origin,
+    bounds: cfg.bounds,
+  });
+
   map = L.map(containerId, {
-    crs: EPSG3031,
-    center: [-76, 162],
-    zoom: 2,
+    crs,
+    center: cfg.center,
+    zoom: cfg.zoom,
     minZoom: 0,
     maxZoom: 8,
     preferCanvas: true,
@@ -50,18 +107,17 @@ export function initMap(containerId: string): L.Map {
     noWrap: true,
   };
 
-  baseLayers = {
-    "Blue Marble": L.tileLayer(
-      "https://gibs.earthdata.nasa.gov/wmts/epsg3031/best/BlueMarble_ShadedRelief_Bathymetry/default/2004-08-01/500m/{z}/{y}/{x}.jpeg",
-      { ...tileOpts, maxZoom: 8, maxNativeZoom: 4 }
-    ),
-    "Land / Water": L.tileLayer(
-      "https://gibs.earthdata.nasa.gov/wmts/epsg3031/best/SCAR_Land_Water_Map/default/2024-01-01/250m/{z}/{y}/{x}.png",
-      { ...tileOpts, maxZoom: 8, maxNativeZoom: 5 }
-    ),
-  };
+  baseLayers = {};
+  for (const [name, info] of Object.entries(cfg.basemaps)) {
+    baseLayers[name] = L.tileLayer(info.url, {
+      ...tileOpts,
+      maxZoom: 8,
+      maxNativeZoom: info.maxNativeZoom,
+    });
+  }
 
-  baseLayers["Blue Marble"].addTo(map);
+  const firstBasemap = Object.keys(baseLayers)[0];
+  baseLayers[firstBasemap].addTo(map);
 
   L.control.scale({ imperial: false }).addTo(map);
 
@@ -101,6 +157,24 @@ export function initMap(containerId: string): L.Map {
   });
 
   return map;
+}
+
+export function getHemisphere(): Hemisphere {
+  return currentHemisphere;
+}
+
+export function destroyMap(): void {
+  if (canvasOverlay) {
+    map.removeLayer(canvasOverlay);
+    canvasOverlay = null;
+  }
+  renderedPoints = [];
+  currentFrameIds = null;
+  if (tooltipEl && tooltipEl.parentNode) {
+    tooltipEl.parentNode.removeChild(tooltipEl);
+    tooltipEl = null;
+  }
+  if (map) map.remove();
 }
 
 function getOrCreateTooltip(): HTMLDivElement {
