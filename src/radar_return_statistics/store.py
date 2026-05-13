@@ -8,6 +8,13 @@ from xarray.coding.times import encode_cf_datetime
 
 logger = logging.getLogger(__name__)
 
+# Per-trace zarr arrays are appended to over the lifetime of the store. xarray's
+# default chunking on first write is the length of the first frame (~38 traces),
+# which makes the viewer fire thousands of HTTP requests per variable. Force a
+# sensible chunk size up front. Existing stores can be migrated with
+# scripts/migrations/rechunk_per_trace_arrays.py.
+PER_TRACE_CHUNK_SIZE = 10000
+
 
 def make_storage(store_config: dict) -> icechunk.Storage:
     """Create icechunk Storage from config (local or S3)."""
@@ -93,7 +100,12 @@ def write_frame_results(
     first_write = "surface_twtt" not in root
 
     if first_write:
-        results_ds.to_zarr(store, mode="w")
+        encoding = {
+            name: {"chunks": (PER_TRACE_CHUNK_SIZE,)}
+            for name in (*results_ds.data_vars, *results_ds.coords)
+            if "slow_time" in results_ds[name].dims
+        }
+        results_ds.to_zarr(store, mode="w", encoding=encoding)
     else:
         _zarr_append(root, results_ds)
 

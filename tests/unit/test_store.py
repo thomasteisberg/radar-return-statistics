@@ -73,6 +73,17 @@ def test_append_increases_trace_count(local_repo):
     assert root["surface_twtt"].shape[0] == 8
 
 
+def test_first_write_uses_explicit_chunk_size(local_repo):
+    session = local_repo.writable_session("main")
+    store_mod.write_frame_results(session, "F1", _make_result_ds(n_traces=5))
+    store_mod.commit_session(session, "test")
+
+    root = _read_root(local_repo)
+    expected = (store_mod.PER_TRACE_CHUNK_SIZE,)
+    for name in ("surface_twtt", "latitude", "longitude", "slow_time"):
+        assert root[name].chunks == expected, f"{name} chunks={root[name].chunks}"
+
+
 def test_get_processed_frames(local_repo):
     session = local_repo.writable_session("main")
     store_mod.write_frame_results(session, "F1", _make_result_ds(hour_offset=0))
