@@ -31,17 +31,19 @@ export const VARIABLE_SOURCE: Record<string, string> = {
   rssnr: "required_surface_snr_dB",
 };
 
-// Raw zarr arrays each display variable depends on. Defaults to the source
-// array (or the variable name itself).
-export const VARIABLE_DEPS: Record<string, string[]> = {};
+export interface VariableInfo {
+  label: string;
+  cmap: string;
+  unit: string;
+  // Multiplier applied when formatting values for display (legend + tooltip).
+  // Stored data is unchanged; e.g. TWTT is stored in seconds but shown as µs.
+  displayScale?: number;
+}
 
-export const VARIABLES: Record<
-  string,
-  { label: string; cmap: string; unit: string }
-> = {
+export const VARIABLES: Record<string, VariableInfo> = {
   rssnr: {
     label: "Required Surface SNR",
-    cmap: "viridis",
+    cmap: "turbo",
     unit: "dB",
   },
   surface_elevation: {
@@ -56,22 +58,24 @@ export const VARIABLES: Record<
   },
   surface_power_dB: {
     label: "Surface Power",
-    cmap: "viridis",
+    cmap: "turbo",
     unit: "dB",
   },
   bed_power_dB: {
     label: "Bed Power",
-    cmap: "viridis",
+    cmap: "turbo",
     unit: "dB",
   },
   surface_twtt: {
     label: "Surface TWTT",
-    cmap: "viridis",
-    unit: "s",
+    cmap: "turbo",
+    unit: "µs",
+    displayScale: 1e6,
   },
   bed_twtt: {
     label: "Bed TWTT",
-    cmap: "viridis",
-    unit: "s",
+    cmap: "turbo",
+    unit: "µs",
+    displayScale: 1e6,
   },
 };

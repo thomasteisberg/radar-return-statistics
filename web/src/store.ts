@@ -7,6 +7,9 @@ export interface StoreData {
   longitude: Float64Array;
   qcPass: Int8Array | null;
   frameId: string[] | null;
+  // Collection name (e.g. "2018_Greenland_P3") per trace, parallel to frameId.
+  // Null when the store predates frame_collections backfill.
+  frameCollection: string[] | null;
   variables: Record<string, Float64Array>;
   numTraces: number;
 }
@@ -42,18 +45,19 @@ function toInt8Array(chunk: zarr.Chunk<zarr.DataType>): Int8Array {
   return new Int8Array(data as unknown as ArrayLike<number>);
 }
 
-// Load frame IDs via frame_index (uint16 per trace) + frame_names group attribute.
-// The native frame_id array uses zarr-python v3's numpy.str_ dtype which
-// zarrita cannot parse. Run scripts/add_frame_index.py once to populate these.
-async function loadFrameIds(store: IcechunkStore): Promise<string[] | null> {
-  // Load frame_names from the root group attributes
+// Load frame IDs (and per-trace collection if available) via frame_index
+// (uint16 per trace) plus the frame_names / frame_collections group
+// attributes. The native frame_id array uses zarr-python v3's numpy.str_
+// dtype which zarrita cannot parse.
+async function loadFrameInfo(
+  store: IcechunkStore
+): Promise<{ frameId: string[] | null; frameCollection: string[] | null }> {
   const rootGrp = await zarr.open(zarr.root(store), { kind: "group" });
-  const frameNames = (rootGrp.attrs as Record<string, unknown>)[
-    "frame_names"
-  ] as string[] | undefined;
-  if (!frameNames?.length) return null;
+  const attrs = rootGrp.attrs as Record<string, unknown>;
+  const frameNames = attrs["frame_names"] as string[] | undefined;
+  const frameCollections = attrs["frame_collections"] as string[] | undefined;
+  if (!frameNames?.length) return { frameId: null, frameCollection: null };
 
-  // Load per-trace frame index
   const idxArr = await zarr.open(
     zarr.root(store).resolve("/frame_index"),
     { kind: "array" }
@@ -61,7 +65,12 @@ async function loadFrameIds(store: IcechunkStore): Promise<string[] | null> {
   const chunk = await zarr.get(idxArr);
   const indices = chunk.data as Uint16Array;
 
-  return Array.from(indices, (i) => frameNames[i] ?? "unknown");
+  const frameId = Array.from(indices, (i) => frameNames[i] ?? "unknown");
+  const frameCollection =
+    frameCollections && frameCollections.length === frameNames.length
+      ? Array.from(indices, (i) => frameCollections[i] ?? "")
+      : null;
+  return { frameId, frameCollection };
 }
 
 export async function loadEssentials(store: IcechunkStore): Promise<StoreData> {
@@ -82,13 +91,22 @@ export async function loadEssentials(store: IcechunkStore): Promise<StoreData> {
   }
 
   let frameId: string[] | null = null;
+  let frameCollection: string[] | null = null;
   try {
-    frameId = await loadFrameIds(store);
+    ({ frameId, frameCollection } = await loadFrameInfo(store));
   } catch (err) {
-    console.warn("frame_id not loaded:", err);
+    console.warn("frame info not loaded:", err);
   }
 
-  return { latitude, longitude, qcPass, frameId, variables: {}, numTraces: latitude.length };
+  return {
+    latitude,
+    longitude,
+    qcPass,
+    frameId,
+    frameCollection,
+    variables: {},
+    numTraces: latitude.length,
+  };
 }
 
 export async function loadVariables(

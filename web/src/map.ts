@@ -3,7 +3,7 @@ import "proj4leaflet";
 import proj4 from "proj4";
 import { ColorScale } from "./colormap";
 import { StoreData } from "./store";
-import { Hemisphere } from "./config";
+import { Hemisphere, VariableInfo } from "./config";
 
 interface HemisphereConfig {
   epsg: string;
@@ -68,6 +68,16 @@ const HEMISPHERES: Record<Hemisphere, HemisphereConfig> = {
 let map: L.Map;
 let baseLayers: Record<string, L.TileLayer>;
 let currentHemisphere: Hemisphere;
+let onViewChange: (() => void) | null = null;
+
+export function setOnViewChange(cb: (() => void) | null): void {
+  onViewChange = cb;
+}
+
+export function isLatLonVisible(lat: number, lon: number): boolean {
+  if (!map) return true;
+  return map.getBounds().contains([lat, lon]);
+}
 
 // Canvas overlay for fast point rendering
 let canvasOverlay: L.Layer | null = null;
@@ -78,8 +88,15 @@ const MAX_RENDER_POINTS = 20000;
 // Hover state
 let renderedPoints: Array<{ lat: number; lon: number; idx: number }> = [];
 let currentFrameIds: string[] | null = null;
+let currentValues: Float64Array | null = null;
+let currentVarInfo: VariableInfo | null = null;
 let tooltipEl: HTMLDivElement | null = null;
 const HOVER_THRESHOLD_PX = 12;
+
+export function formatScaledValue(value: number, info: VariableInfo): string {
+  const scaled = (info.displayScale ?? 1) * value;
+  return scaled.toPrecision(4);
+}
 
 export function initMap(containerId: string, hemisphere: Hemisphere): L.Map {
   const cfg = HEMISPHERES[hemisphere];
@@ -121,6 +138,10 @@ export function initMap(containerId: string, hemisphere: Hemisphere): L.Map {
 
   L.control.scale({ imperial: false }).addTo(map);
 
+  map.on("moveend", () => {
+    if (onViewChange) onViewChange();
+  });
+
   map.on("mousemove", (e: L.LeafletMouseEvent) => {
     if (renderedPoints.length === 0) return;
     const tooltip = getOrCreateTooltip();
@@ -140,10 +161,21 @@ export function initMap(containerId: string, hemisphere: Hemisphere): L.Map {
     }
 
     if (minDist <= HOVER_THRESHOLD_PX && nearestPt !== null) {
-      const label = currentFrameIds
+      const frameLabel = currentFrameIds
         ? (currentFrameIds[nearestPt.idx] ?? "unknown")
         : `trace ${nearestPt.idx}`;
-      tooltip.textContent = label;
+      tooltip.replaceChildren();
+      const line1 = document.createElement("div");
+      line1.textContent = frameLabel;
+      tooltip.appendChild(line1);
+      if (currentValues && currentVarInfo) {
+        const v = currentValues[nearestPt.idx];
+        if (!isNaN(v)) {
+          const line2 = document.createElement("div");
+          line2.textContent = `${currentVarInfo.label} [${currentVarInfo.unit}]: ${formatScaledValue(v, currentVarInfo)}`;
+          tooltip.appendChild(line2);
+        }
+      }
       tooltip.style.display = "block";
       tooltip.style.left = `${containerPt.x + 14}px`;
       tooltip.style.top = `${containerPt.y - 28}px`;
@@ -170,6 +202,8 @@ export function destroyMap(): void {
   }
   renderedPoints = [];
   currentFrameIds = null;
+  currentValues = null;
+  currentVarInfo = null;
   if (tooltipEl && tooltipEl.parentNode) {
     tooltipEl.parentNode.removeChild(tooltipEl);
     tooltipEl = null;
@@ -283,7 +317,9 @@ const CanvasPointsLayer = L.Layer.extend({
 export function renderPoints(
   data: StoreData,
   variableName: string,
-  scale: ColorScale
+  varInfo: VariableInfo,
+  scale: ColorScale,
+  seasonPredicate: ((traceIdx: number) => boolean) | null = null,
 ): void {
   if (canvasOverlay) {
     map.removeLayer(canvasOverlay);
@@ -293,35 +329,42 @@ export function renderPoints(
   const values = data.variables[variableName];
   if (!values) return;
 
-  // Build list of valid point indices
-  const validIndices: number[] = [];
+  // Stable subsample over qc-passing traces with valid lat/lon — *not* filtered
+  // by variable-NaN or season. Sampling the same set every render keeps the
+  // unrelated seasons' visible points fixed when one is toggled.
+  const baseIndices: number[] = [];
   for (let i = 0; i < data.numTraces; i++) {
     if (data.qcPass && !data.qcPass[i]) continue;
-    if (isNaN(values[i])) continue;
     if (isNaN(data.latitude[i]) || isNaN(data.longitude[i])) continue;
-    validIndices.push(i);
+    baseIndices.push(i);
   }
 
-  // Subsample if too many points
-  let indices = validIndices;
-  if (validIndices.length > MAX_RENDER_POINTS) {
-    const step = validIndices.length / MAX_RENDER_POINTS;
+  let indices = baseIndices;
+  if (baseIndices.length > MAX_RENDER_POINTS) {
+    const step = baseIndices.length / MAX_RENDER_POINTS;
     indices = [];
     for (let j = 0; j < MAX_RENDER_POINTS; j++) {
-      indices.push(validIndices[Math.floor(j * step)]);
+      indices.push(baseIndices[Math.floor(j * step)]);
     }
   }
 
-  const points: PointData[] = indices.map((i) => ({
-    lat: data.latitude[i],
-    lon: data.longitude[i],
-    color: scale.getColor(values[i]),
-    idx: i,
-  }));
+  const points: PointData[] = [];
+  for (const i of indices) {
+    if (isNaN(values[i])) continue;
+    if (seasonPredicate && !seasonPredicate(i)) continue;
+    points.push({
+      lat: data.latitude[i],
+      lon: data.longitude[i],
+      color: scale.getColor(values[i]),
+      idx: i,
+    });
+  }
 
   // Update hover state
   renderedPoints = points.map((p) => ({ lat: p.lat, lon: p.lon, idx: p.idx }));
   currentFrameIds = data.frameId;
+  currentValues = values;
+  currentVarInfo = varInfo;
   if (tooltipEl) tooltipEl.style.display = "none";
 
   canvasOverlay = new (CanvasPointsLayer as unknown as new (

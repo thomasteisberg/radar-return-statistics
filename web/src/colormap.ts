@@ -1,6 +1,21 @@
 import chroma from "chroma-js";
 
 const COLORMAPS: Record<string, string[]> = {
+  // Approximation of Google's Turbo colormap — high contrast across range,
+  // perceptually ordered. 11 sample stops; chroma-js interpolates between.
+  turbo: [
+    "#30123b",
+    "#4145ab",
+    "#4675ed",
+    "#39a2fc",
+    "#1bcfd4",
+    "#24eca6",
+    "#61fc6c",
+    "#a4fc3b",
+    "#e8c93a",
+    "#fa6b27",
+    "#7a0403",
+  ],
   viridis: [
     "#440154",
     "#482777",
@@ -36,13 +51,15 @@ export interface ColorScale {
 export function createColorScale(
   values: Float64Array,
   cmapName: string,
-  qcPass: Int8Array | null
+  qcPass: Int8Array | null,
+  includeFn?: (i: number) => boolean,
 ): ColorScale {
-  // Collect valid values (not NaN, passes QC)
+  // Collect valid values (not NaN, passes QC, optionally inside includeFn).
   const valid: number[] = [];
   for (let i = 0; i < values.length; i++) {
     if (isNaN(values[i])) continue;
     if (qcPass && !qcPass[i]) continue;
+    if (includeFn && !includeFn(i)) continue;
     valid.push(values[i]);
   }
 

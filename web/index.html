@@ -45,12 +45,43 @@
         border-bottom: 1px solid #0f3460;
       }
 
-      .sidebar-section h2 {
+      .sidebar-section h2,
+      .sidebar-section summary {
         font-size: 12px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
         color: #888;
         margin-bottom: 8px;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .sidebar-section summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .sidebar-section summary::before {
+        content: "▸ ";
+        display: inline-block;
+        transition: transform 0.15s;
+      }
+
+      details[open] > summary::before {
+        content: "▾ ";
+      }
+
+      #season-list {
+        max-height: 220px;
+        overflow-y: auto;
+      }
+
+      #season-list label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 0;
+        font-size: 12px;
+        cursor: pointer;
       }
 
       #dataset-select,
@@ -172,6 +203,16 @@
         align-items: flex-start;
       }
 
+      #color-legend .legend-adaptive {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 6px;
+        font-size: 11px;
+        color: #ccc;
+        cursor: pointer;
+      }
+
       .leaflet-container {
         background: #1a1a2e;
       }
@@ -196,16 +237,20 @@
           <option value="bed_elevation">Bed Elevation [m WGS84]</option>
           <option value="surface_power_dB">Surface Power [dB]</option>
           <option value="bed_power_dB">Bed Power [dB]</option>
-          <option value="surface_twtt">Surface TWTT [s]</option>
-          <option value="bed_twtt">Bed TWTT [s]</option>
+          <option value="surface_twtt">Surface TWTT [µs]</option>
+          <option value="bed_twtt">Bed TWTT [µs]</option>
         </select>
       </div>
-      <div class="sidebar-section">
-        <h2>Version History</h2>
+      <details class="sidebar-section" id="seasons-section" hidden>
+        <summary>Seasons</summary>
+        <div id="season-list"></div>
+      </details>
+      <details class="sidebar-section">
+        <summary>Version History</summary>
         <ul id="history-list">
           <li class="commit-meta">Loading...</li>
         </ul>
-      </div>
+      </details>
       <div id="status">Initializing...</div>
     </div>
     <div id="map-container">
@@ -226,6 +271,10 @@
             <span id="legend-min"></span>
           </div>
         </div>
+        <label class="legend-adaptive">
+          <input type="checkbox" id="legend-adaptive-cb">
+          <span>Adaptive limits</span>
+        </label>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
