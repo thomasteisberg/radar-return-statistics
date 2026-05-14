@@ -210,6 +210,15 @@ def process_frame(opr: OPRConnection, stac_item, config: dict) -> xr.Dataset | N
         if "Elevation" in frame:
             ds.coords["elevation"] = frame.Elevation
 
+        # Stash the collection (e.g. 2018_Greenland_P3) so the runner can build
+        # a frame_id -> collection mapping for the viewer.
+        if hasattr(stac_item, "get"):
+            collection = stac_item.get("collection")
+        else:
+            collection = getattr(stac_item, "collection", None)
+        if collection:
+            ds.attrs["collection"] = str(collection)
+
         n_qc_pass = int(qc_pass.sum())
         logger.info("Frame %s: processed successfully (%d traces, %d pass QC)",
                     frame_id, len(ds.slow_time), n_qc_pass)

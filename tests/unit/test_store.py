@@ -126,6 +126,41 @@ def test_update_frame_index_consistency(local_repo):
     np.testing.assert_array_equal(frame_ids, reconstructed)
 
 
+def test_update_frame_index_writes_collections(local_repo):
+    session = local_repo.writable_session("main")
+    store_mod.write_frame_results(session, "F1", _make_result_ds(n_traces=3, frame_id="FRAME_A", hour_offset=0))
+    store_mod.write_frame_results(session, "F2", _make_result_ds(n_traces=4, frame_id="FRAME_B", hour_offset=1))
+    store_mod.update_frame_index(
+        session,
+        frame_collections={"FRAME_A": "season_a", "FRAME_B": "season_b"},
+    )
+    store_mod.commit_session(session, "test")
+
+    root = _read_root(local_repo)
+    names = list(root.attrs["frame_names"])
+    cols = list(root.attrs["frame_collections"])
+    assert len(names) == len(cols)
+    assert dict(zip(names, cols)) == {"FRAME_A": "season_a", "FRAME_B": "season_b"}
+
+
+def test_update_frame_index_preserves_prior_collections(local_repo):
+    """A subsequent run with only new-frame collections must not blank out prior frames."""
+    s1 = local_repo.writable_session("main")
+    store_mod.write_frame_results(s1, "F1", _make_result_ds(n_traces=3, frame_id="FRAME_A", hour_offset=0))
+    store_mod.update_frame_index(s1, frame_collections={"FRAME_A": "season_a"})
+    store_mod.commit_session(s1, "first")
+
+    s2 = local_repo.writable_session("main")
+    store_mod.write_frame_results(s2, "F2", _make_result_ds(n_traces=4, frame_id="FRAME_B", hour_offset=1))
+    store_mod.update_frame_index(s2, frame_collections={"FRAME_B": "season_b"})
+    store_mod.commit_session(s2, "second")
+
+    root = _read_root(local_repo)
+    names = list(root.attrs["frame_names"])
+    cols = list(root.attrs["frame_collections"])
+    assert dict(zip(names, cols)) == {"FRAME_A": "season_a", "FRAME_B": "season_b"}
+
+
 def test_schema_contract(local_repo):
     """All downstream-visible arrays have the expected names and coordinate lengths."""
     session = local_repo.writable_session("main")

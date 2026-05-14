@@ -192,10 +192,13 @@ def run(config_path: str | None = None, *, config: dict | None = None, reprocess
         n_removed = store.remove_frames(session, orphaned_frames)
         logger.info("Removed %d traces from %d out-of-scope frames", n_removed, len(orphaned_frames))
 
+    frame_collections: dict[str, str] = {}
     for fid, ds in results:
         store.write_frame_results(session, fid, ds)
+        if "collection" in ds.attrs:
+            frame_collections[fid] = str(ds.attrs["collection"])
 
-    store.update_frame_index(session)
+    store.update_frame_index(session, frame_collections=frame_collections or None)
 
     # Commit
     parts = []

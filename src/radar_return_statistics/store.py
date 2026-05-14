@@ -166,13 +166,28 @@ def clear_store(session: icechunk.Session) -> None:
         del root[key]
 
 
-def update_frame_index(session: icechunk.Session) -> None:
-    """Rebuild frame_index (uint16 per trace) and frame_names root attribute from frame_id."""
+def update_frame_index(
+    session: icechunk.Session,
+    frame_collections: dict[str, str] | None = None,
+) -> None:
+    """Rebuild frame_index (uint16 per trace) and frame_names root attribute from frame_id.
+
+    If ``frame_collections`` is given (mapping frame_id -> collection name), it
+    is unioned into the existing ``frame_collections`` root attribute (parallel
+    to ``frame_names``). The viewer uses this to show full collection names —
+    parsing the year from the frame id alone is ambiguous when multiple
+    collections share a year.
+    """
     store = session.store
     root = zarr.open_group(store, mode="a")
 
     if "frame_id" not in root:
         return
+
+    # Snapshot previous frame -> collection mapping before we overwrite frame_names.
+    prev_names = list(root.attrs.get("frame_names", []) or [])
+    prev_cols = list(root.attrs.get("frame_collections", []) or [])
+    prev_mapping: dict[str, str] = dict(zip(prev_names, prev_cols))
 
     frame_ids = root["frame_id"][:]
 
@@ -188,6 +203,15 @@ def update_frame_index(session: icechunk.Session) -> None:
     frame_index = np.array([seen[fid] for fid in frame_ids], dtype="uint16")
     root.create_array("frame_index", data=frame_index, chunks=(10000,), overwrite=True)
     root.attrs["frame_names"] = frame_names
+
+    # Maintain frame_collections parallel to frame_names. Merge whatever new
+    # entries we were given with the previous mapping so partial inputs don't
+    # drop collection info for older frames.
+    if frame_collections or prev_mapping:
+        if frame_collections:
+            prev_mapping.update(frame_collections)
+        root.attrs["frame_collections"] = [prev_mapping.get(name, "") for name in frame_names]
+
     logger.info("Updated frame_index: %d traces, %d unique frames", len(frame_ids), len(frame_names))
 
 
