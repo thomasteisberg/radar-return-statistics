@@ -155,9 +155,32 @@ def run(config_path: str | None = None, *, config: dict | None = None, reprocess
 
     logger.info("%d frames to process", len(new_frame_ids))
 
-    # Process frames in parallel
     max_workers = config["processing"].get("max_workers", 4)
-    results: list[tuple[str, xr.Dataset]] = []
+    checkpoint_every = config["processing"].get("checkpoint_every") or 0
+    total_to_process = len(new_frame_ids)
+
+    # Open initial session; apply pre-write operations so they land in the
+    # very first commit (even if it's a checkpoint).
+    session = repo.writable_session("main")
+    session_dirty = False
+
+    if reprocess:
+        store.clear_store(session)
+        session_dirty = True
+
+    if orphaned_frames and remove_out_of_scope:
+        n_removed = store.remove_frames(session, orphaned_frames)
+        logger.info("Removed %d traces from %d out-of-scope frames", n_removed, len(orphaned_frames))
+        session_dirty = True
+
+    # Run-wide tallies (across all checkpoints + final commit).
+    total_frames_written = 0
+    total_traces_written = 0
+    all_collections: set[str] = set()
+
+    # Per-checkpoint state — flushed at each checkpoint commit.
+    batch_count = 0
+    batch_frame_collections: dict[str, str] = {}
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
@@ -170,53 +193,60 @@ def run(config_path: str | None = None, *, config: dict | None = None, reprocess
             fid = futures[future]
             try:
                 ds = future.result()
-                if ds is not None:
-                    results.append((fid, ds))
-                    logger.info("Completed frame %s (%d/%d)", fid, len(results), len(new_frame_ids))
-                else:
-                    logger.warning("Frame %s returned no results", fid)
             except Exception:
                 logger.exception("Frame %s raised an exception", fid)
+                continue
+            if ds is None:
+                logger.warning("Frame %s returned no results", fid)
+                continue
 
-    if not results and nothing_to_remove:
+            store.write_frame_results(session, fid, ds)
+            session_dirty = True
+            n_traces = len(ds.slow_time)
+            total_frames_written += 1
+            total_traces_written += n_traces
+            batch_count += 1
+            if "collection" in ds.attrs:
+                col = str(ds.attrs["collection"])
+                batch_frame_collections[fid] = col
+                all_collections.add(col)
+            logger.info("Completed frame %s (%d/%d)", fid, total_frames_written, total_to_process)
+
+            if checkpoint_every and batch_count >= checkpoint_every:
+                store.update_frame_index(session, frame_collections=batch_frame_collections or None)
+                cp_msg = (
+                    f"[checkpoint] {total_frames_written}/{total_to_process} frames "
+                    f"({total_traces_written} traces) — "
+                    f"{', '.join(sorted(all_collections)) or 'no collection metadata'}"
+                )
+                store.commit_session(session, cp_msg)
+                session = repo.writable_session("main")
+                session_dirty = False
+                batch_count = 0
+                batch_frame_collections = {}
+
+    if total_frames_written == 0 and not session_dirty:
         logger.warning("No frames produced results")
         return
 
-    # Write results to icechunk sequentially
-    session = repo.writable_session("main")
+    # Final [run] commit — handles trailing batch + always emits a single
+    # entry per run for the viewer (which hides [checkpoint] entries).
+    store.update_frame_index(session, frame_collections=batch_frame_collections or None)
 
-    if reprocess:
-        store.clear_store(session)
-
-    if orphaned_frames and remove_out_of_scope:
-        n_removed = store.remove_frames(session, orphaned_frames)
-        logger.info("Removed %d traces from %d out-of-scope frames", n_removed, len(orphaned_frames))
-
-    frame_collections: dict[str, str] = {}
-    for fid, ds in results:
-        store.write_frame_results(session, fid, ds)
-        if "collection" in ds.attrs:
-            frame_collections[fid] = str(ds.attrs["collection"])
-
-    store.update_frame_index(session, frame_collections=frame_collections or None)
-
-    # Commit
     parts = []
     if orphaned_frames and remove_out_of_scope:
         parts.append(f"Removed {len(orphaned_frames)} out-of-scope frames")
-    if results:
-        n_frames = len(results)
-        n_traces = sum(len(ds.slow_time) for _, ds in results)
-        parts.append(f"Processed {n_frames} frames ({n_traces} traces)")
-    summary = "; ".join(parts)
+    if total_frames_written > 0:
+        parts.append(f"Processed {total_frames_written} frames ({total_traces_written} traces)")
+    summary = "; ".join(parts) or "no changes"
 
     if commit_message:
-        message = f"{commit_message}\n\n{summary}"
+        message = f"[run] {commit_message}\n\n{summary}"
     else:
         collections = config["query"].get("collections")
-        if collections and results:
-            message = f"{', '.join(collections)}: {summary}"
+        if collections and total_frames_written > 0:
+            message = f"[run] {', '.join(collections)}: {summary}"
         else:
-            message = summary
+            message = f"[run] {summary}"
     store.commit_session(session, message)
     logger.info("Done: %s", message)

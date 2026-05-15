@@ -24,6 +24,9 @@ def load_config(config_path: str | Path) -> dict:
     config["processing"].setdefault("layer_margin_m", 50)
     config["processing"].setdefault("ice_permittivity", 3.17)
     config["processing"].setdefault("max_workers", 4)
+    # Commit a checkpoint every N successfully-stored frames so a long pipeline
+    # run survives a crash. Set to 0 (or null) to disable and only commit at end.
+    config["processing"].setdefault("checkpoint_every", 1000)
     config.setdefault("qc", {})
     config["qc"].setdefault("max_heading_change_deg_per_km", None)
     config["qc"].setdefault("min_ice_thickness_m", None)

@@ -84,6 +84,16 @@
         cursor: pointer;
       }
 
+      .history-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 6px;
+        font-size: 11px;
+        color: #ccc;
+        cursor: pointer;
+      }
+
       #dataset-select,
       #basemap-select,
       #variable-select {
@@ -247,6 +257,10 @@
       </details>
       <details class="sidebar-section">
         <summary>Version History</summary>
+        <label class="history-toggle">
+          <input type="checkbox" id="show-checkpoints-cb">
+          <span>Show checkpoints</span>
+        </label>
         <ul id="history-list">
           <li class="commit-meta">Loading...</li>
         </ul>

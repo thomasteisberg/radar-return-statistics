@@ -6,8 +6,12 @@ region:
   # No subregion filter — full Greenland geometry.
 
 query:
-  # Recent P3 Greenland seasons — adding incrementally.
+  # Recent P3 Greenland seasons — adding incrementally working backwards.
   collections:
+    # 2012_Greenland_P3 and earlier broadly lack the 'Heading' variable that
+    # xopr turn-rejection QC requires, so they yield zero usable frames.
+    - "2013_Greenland_P3"
+    - "2014_Greenland_P3"
     - "2016_Greenland_P3"
     - "2017_Greenland_P3"
     - "2018_Greenland_P3"
@@ -19,7 +23,7 @@ processing:
   decimate_interval: "10s"
   layer_margin_m: 50
   ice_permittivity: 3.17
-  max_workers: 8
+  max_workers: 4
 
 qc:
   max_heading_change_deg_per_km: 2.0

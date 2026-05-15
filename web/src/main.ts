@@ -38,6 +38,7 @@ const legendMid = document.getElementById("legend-mid") as HTMLSpanElement;
 const legendMin = document.getElementById("legend-min") as HTMLSpanElement;
 const legendCanvas = document.getElementById("legend-bar") as HTMLCanvasElement;
 const legendAdaptiveCb = document.getElementById("legend-adaptive-cb") as HTMLInputElement;
+const showCheckpointsCb = document.getElementById("show-checkpoints-cb") as HTMLInputElement;
 
 let currentData: StoreData | null = null;
 let currentStore: IcechunkStore | null = null;
@@ -188,9 +189,14 @@ async function loadSnapshot(snapshotId?: string) {
 
 function renderHistoryList() {
   historyList.innerHTML = "";
-  for (const entry of commitLog) {
+  const showCheckpoints = showCheckpointsCb.checked;
+  const visible = commitLog.filter(
+    (e) => showCheckpoints || !(e.message ?? "").startsWith("[checkpoint]"),
+  );
+  const activeId = currentSnapshotId ?? visible[0]?.id;
+  for (const entry of visible) {
     const li = document.createElement("li");
-    if (entry.id === (currentSnapshotId ?? commitLog[0]?.id)) {
+    if (entry.id === activeId) {
       li.classList.add("active");
     }
 
@@ -292,6 +298,8 @@ async function init() {
     setOnViewChange(legendAdaptiveCb.checked ? renderCurrentVariable : null);
     renderCurrentVariable();
   });
+
+  showCheckpointsCb.addEventListener("change", renderHistoryList);
 
   variableSelect.addEventListener("change", async () => {
     if (!currentData || !currentStore) return;
