@@ -15,6 +15,28 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 
+# Per-region CRS settings used for distance computation and basemap.
+# Keys match the values config.region.area accepts (see runner._get_region_geometry).
+HEMISPHERE_PROJ = {
+    "antarctic": {
+        "epsg": "EPSG:3031",
+        "cartopy": lambda: ccrs.SouthPolarStereo(),
+    },
+    "greenland": {
+        "epsg": "EPSG:3413",
+        "cartopy": lambda: ccrs.NorthPolarStereo(central_longitude=-45),
+    },
+}
+
+
+def _hemisphere_for_region(region_config: dict) -> str:
+    """Map config['region']['area'] (default 'antarctic') to a HEMISPHERE_PROJ key."""
+    area = (region_config or {}).get("area", "antarctic")
+    if area not in HEMISPHERE_PROJ:
+        raise ValueError(f"Unknown region.area: {area!r}")
+    return area
+
+
 def _bearing(x, y, idx):
     n = len(x)
     if n == 1:
@@ -48,13 +70,14 @@ def _clean(df, var):
     return df.dropna(subset=[f"{var}_a", f"{var}_b", f"{var}_diff"])
 
 
-def find_crossovers(data, frame_names, threshold, verbose, variables):
+def find_crossovers(data, frame_names, threshold, verbose, variables, crs="EPSG:3031"):
     """Find crossover points between flight lines.
 
     data must contain 'lat', 'lon', 'frame_index', and one key per variable in variables.
-    Returns (DataFrame, pairs_checked).
+    ``crs`` selects the projection used for metric distance calculations
+    (EPSG:3031 in the south, EPSG:3413 in the north). Returns (DataFrame, pairs_checked).
     """
-    transformer = Transformer.from_crs("EPSG:4326", "EPSG:3031", always_xy=True)
+    transformer = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
     x_all, y_all = transformer.transform(data["lon"], data["lat"])
     fi = data["frame_index"]
     n_frames = len(frame_names)
@@ -138,8 +161,8 @@ def find_crossovers(data, frame_names, threshold, verbose, variables):
                     "frame_b": frame_names[fj_idx],
                     "distance_m": min_dist,
                     "angle_deg": angle,
-                    "x_3031": cx,
-                    "y_3031": cy,
+                    "x_proj": cx,
+                    "y_proj": cy,
                 }
                 for var in variables:
                     row[f"{var}_a"] = float(data[var][gi])
@@ -154,9 +177,9 @@ def find_crossovers(data, frame_names, threshold, verbose, variables):
     return pd.DataFrame(crossovers), pairs_checked
 
 
-def make_map(df, output_dir, variables):
-    transformer_inv = Transformer.from_crs("EPSG:3031", "EPSG:4326", always_xy=True)
-    all_lons, all_lats = transformer_inv.transform(df["x_3031"].values, df["y_3031"].values)
+def make_map(df, output_dir, variables, crs="EPSG:3031", cartopy_proj=None):
+    transformer_inv = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+    all_lons, all_lats = transformer_inv.transform(df["x_proj"].values, df["y_proj"].values)
     df = df.copy()
     df["_lon"] = all_lons
     df["_lat"] = all_lats
@@ -170,7 +193,7 @@ def make_map(df, output_dir, variables):
     ncols = min(3, n)
     nrows = (n + ncols - 1) // ncols
     fig = plt.figure(figsize=(6 * ncols, 5 * nrows), constrained_layout=True)
-    proj = ccrs.SouthPolarStereo()
+    proj = cartopy_proj if cartopy_proj is not None else ccrs.SouthPolarStereo()
 
     for i, var in enumerate(variables):
         ax = fig.add_subplot(nrows, ncols, i + 1, projection=proj)

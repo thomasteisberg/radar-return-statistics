@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).parents[2] / "src"))
 from radar_return_statistics.config import load_config
 from radar_return_statistics.store import open_or_create_repo
 from radar_return_statistics.crossovers import (
-    find_crossovers, make_map, make_scatter, make_differences, make_summary, print_summary,
+    find_crossovers, make_map, make_scatter, make_differences, make_summary,
+    print_summary, HEMISPHERE_PROJ, _hemisphere_for_region,
 )
 
 C = 299792458.0
@@ -75,12 +76,17 @@ def main(config_path, threshold, output_dir, verbose):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    hemisphere = _hemisphere_for_region(config.get("region", {}))
+    crs = HEMISPHERE_PROJ[hemisphere]["epsg"]
+    cartopy_proj = HEMISPHERE_PROJ[hemisphere]["cartopy"]()
+    click.echo(f"Hemisphere: {hemisphere} ({crs})")
+
     click.echo("Loading data from store...")
     data, frame_names = load_data(config)
     click.echo(f"Loaded {len(data['lat'])} QC-passing traces across {len(frame_names)} frames")
 
     click.echo(f"Finding crossovers (threshold={threshold} m)...")
-    df, pairs_checked = find_crossovers(data, frame_names, threshold, verbose, VARIABLES)
+    df, pairs_checked = find_crossovers(data, frame_names, threshold, verbose, VARIABLES, crs=crs)
     click.echo(f"Found {len(df)} crossovers from {pairs_checked} frame pairs checked")
 
     if df.empty:
@@ -100,7 +106,7 @@ def main(config_path, threshold, output_dir, verbose):
     click.echo()
 
     click.echo("Generating map.png...")
-    make_map(df, output_dir, VARIABLES)
+    make_map(df, output_dir, VARIABLES, crs=crs, cartopy_proj=cartopy_proj)
     click.echo(f"Saved: {output_dir / 'map.png'}")
 
     click.echo("Generating scatter.png...")
