@@ -1,6 +1,11 @@
 import L from "leaflet";
 import "proj4leaflet";
 import proj4 from "proj4";
+import chroma from "chroma-js";
+import parseGeoraster from "georaster";
+import GeoRasterLayer, {
+  type GeoRaster as LayerGeoRaster,
+} from "georaster-layer-for-leaflet";
 import { ColorScale } from "./colormap";
 import { StoreData } from "./store";
 import { Hemisphere, VariableInfo } from "./config";
@@ -15,6 +20,43 @@ interface HemisphereConfig {
   center: [number, number];
   zoom: number;
   basemaps: Record<string, { url: string; maxNativeZoom: number }>;
+  // ITS_LIVE v2.1 velocity-magnitude COG (its native CRS == this map's CRS,
+  // so no reprojection is needed). Rendered live client-side.
+  velocityCog?: string;
+}
+
+export const VELOCITY_BASEMAP = "ITS_LIVE Velocity";
+
+// Log grayscale ramp for ice speed (m/yr). Domain ~1–3000 covers slow interior
+// through fast outlet glaciers; white = faster so the bright outlet glaciers
+// read against the dark interior while the colored data points stay legible.
+const VELOCITY_VMIN = 1;
+const VELOCITY_VMAX = 3000;
+const VELOCITY_OPACITY = 0.85;
+const velocityRamp = chroma.scale(["#000000", "#ffffff"]).domain([0, 1]);
+const LOG_VMIN = Math.log(VELOCITY_VMIN);
+const LOG_SPAN = Math.log(VELOCITY_VMAX) - LOG_VMIN;
+
+// Color for a 0..1 fraction of the (log) speed range — used by velocityColor
+// and by the legend so the colorbar matches the rendered raster exactly.
+export function velocityColorForFraction(t: number): string {
+  return velocityRamp(Math.max(0, Math.min(1, t))).hex();
+}
+
+// Legend tick values: min, geometric mid (log-scale center), max.
+export const VELOCITY_LEGEND = {
+  label: "Ice speed",
+  unit: "m/yr",
+  min: VELOCITY_VMIN,
+  mid: Math.round(Math.exp((LOG_VMIN + Math.log(VELOCITY_VMAX)) / 2)),
+  max: VELOCITY_VMAX,
+};
+
+function velocityColor(values: number[]): string | null {
+  const v = values[0];
+  if (v == null || isNaN(v) || v === -32767 || v <= 0) return null;
+  const t = (Math.log(Math.min(v, VELOCITY_VMAX)) - LOG_VMIN) / LOG_SPAN;
+  return velocityColorForFraction(t);
 }
 
 const GIBS_RESOLUTIONS = [8192, 4096, 2048, 1024, 512, 256, 128, 64, 32];
@@ -41,6 +83,8 @@ const HEMISPHERES: Record<Hemisphere, HemisphereConfig> = {
         maxNativeZoom: 5,
       },
     },
+    velocityCog:
+      "https://its-live-data.s3.amazonaws.com/velocity_mosaic/v2.1/static/cog/ITS_LIVE_velocity_120m_RGI19A_0000_V02.1_v.tif",
   },
   arctic: {
     epsg: "EPSG:3413",
@@ -62,6 +106,8 @@ const HEMISPHERES: Record<Hemisphere, HemisphereConfig> = {
         maxNativeZoom: 5,
       },
     },
+    velocityCog:
+      "https://its-live-data.s3.amazonaws.com/velocity_mosaic/v2.1/static/cog/ITS_LIVE_velocity_120m_RGI05A_0000_V02.1_v.tif",
   },
 };
 
@@ -69,6 +115,16 @@ let map: L.Map;
 let baseLayers: Record<string, L.TileLayer>;
 let currentHemisphere: Hemisphere;
 let onViewChange: (() => void) | null = null;
+
+// ITS_LIVE velocity layer: created lazily on first selection (the COG header
+// fetch + GeoRasterLayer setup is deferred until the user picks it).
+let velocityCogUrl: string | undefined;
+let velocityLayer: L.Layer | null = null;
+let velocityPromise: Promise<L.Layer> | null = null;
+// The URL the cached promise was built for; reused only when it still matches
+// the requested COG so a hemisphere switch can't serve the stale raster.
+let velocityPromiseUrl: string | null = null;
+let activeBasemap = "";
 
 export function setOnViewChange(cb: (() => void) | null): void {
   onViewChange = cb;
@@ -133,8 +189,14 @@ export function initMap(containerId: string, hemisphere: Hemisphere): L.Map {
     });
   }
 
+  velocityCogUrl = cfg.velocityCog;
+  velocityLayer = null;
+  velocityPromise = null;
+  velocityPromiseUrl = null;
+
   const firstBasemap = Object.keys(baseLayers)[0];
   baseLayers[firstBasemap].addTo(map);
+  activeBasemap = firstBasemap;
 
   L.control.scale({ imperial: false }).addTo(map);
 
@@ -196,6 +258,13 @@ export function getHemisphere(): Hemisphere {
 }
 
 export function destroyMap(): void {
+  if (velocityLayer && map.hasLayer(velocityLayer)) {
+    map.removeLayer(velocityLayer);
+  }
+  velocityLayer = null;
+  velocityPromise = null;
+  velocityPromiseUrl = null;
+  velocityCogUrl = undefined;
   if (canvasOverlay) {
     map.removeLayer(canvasOverlay);
     canvasOverlay = null;
@@ -232,7 +301,52 @@ function getOrCreateTooltip(): HTMLDivElement {
   return tooltipEl;
 }
 
-export function setBasemap(name: string): void {
+function ensureVelocityLayer(url: string): Promise<L.Layer> {
+  if (!velocityPromise || velocityPromiseUrl !== url) {
+    velocityPromiseUrl = url;
+    velocityPromise = (async () => {
+      const georaster = (await parseGeoraster(url)) as unknown as LayerGeoRaster;
+      return new GeoRasterLayer({
+        georaster,
+        opacity: VELOCITY_OPACITY,
+        resolution: 256,
+        pixelValuesToColorFn: velocityColor,
+        attribution:
+          '<a href="https://its-live.jpl.nasa.gov/" target="_blank" rel="noopener">ITS_LIVE</a>',
+        // Use the app's proj4 (defs for this hemisphere's EPSG are registered
+        // in initMap) so GeoRasterLayer can map the COG into the map CRS.
+        proj4,
+        resampleMethod: "bilinear",
+      }) as unknown as L.Layer;
+    })();
+  }
+  return velocityPromise;
+}
+
+export async function setBasemap(name: string): Promise<void> {
+  activeBasemap = name;
+
+  if (name === VELOCITY_BASEMAP && velocityCogUrl) {
+    for (const layer of Object.values(baseLayers)) {
+      if (map.hasLayer(layer)) map.removeLayer(layer);
+    }
+    const url = velocityCogUrl;
+    try {
+      const layer = await ensureVelocityLayer(url);
+      // Guard against the user switching away (or rebuilding the map for a
+      // different hemisphere) while the COG header was loading.
+      if (activeBasemap !== VELOCITY_BASEMAP || velocityCogUrl !== url) return;
+      velocityLayer = layer;
+      if (!map.hasLayer(layer)) map.addLayer(layer);
+    } catch (err) {
+      console.error("Failed to load ITS_LIVE velocity layer:", err);
+    }
+    return;
+  }
+
+  if (velocityLayer && map.hasLayer(velocityLayer)) {
+    map.removeLayer(velocityLayer);
+  }
   for (const [key, layer] of Object.entries(baseLayers)) {
     if (key === name) {
       if (!map.hasLayer(layer)) map.addLayer(layer);
@@ -243,7 +357,9 @@ export function setBasemap(name: string): void {
 }
 
 export function getBasemapNames(): string[] {
-  return Object.keys(baseLayers);
+  const names = Object.keys(baseLayers);
+  if (velocityCogUrl) names.push(VELOCITY_BASEMAP);
+  return names;
 }
 
 interface PointData {

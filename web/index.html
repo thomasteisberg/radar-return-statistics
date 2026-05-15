@@ -174,7 +174,8 @@
         display: none;
       }
 
-      #color-legend {
+      #color-legend,
+      #velocity-legend {
         position: absolute;
         bottom: 30px;
         right: 10px;
@@ -187,19 +188,31 @@
         min-width: 60px;
       }
 
-      #color-legend .legend-title {
+      /* Stack the velocity colorbar above the data-variable legend. */
+      #velocity-legend {
+        bottom: 250px;
+      }
+
+      #velocity-legend[hidden] {
+        display: none;
+      }
+
+      #color-legend .legend-title,
+      #velocity-legend .legend-title {
         font-size: 11px;
         color: #888;
         margin-bottom: 4px;
       }
 
-      #color-legend .legend-bar {
+      #color-legend .legend-bar,
+      #velocity-legend .legend-bar {
         width: 20px;
         height: 150px;
         margin: 0 auto;
       }
 
-      #color-legend .legend-labels {
+      #color-legend .legend-labels,
+      #velocity-legend .legend-labels {
         display: flex;
         flex-direction: column;
         justify-content: space-between;
@@ -208,7 +221,8 @@
         font-size: 11px;
       }
 
-      #color-legend .legend-row {
+      #color-legend .legend-row,
+      #velocity-legend .legend-row {
         display: flex;
         align-items: flex-start;
       }
@@ -270,6 +284,22 @@
     <div id="map-container">
       <div id="map"></div>
       <div id="loading-overlay">Loading data from S3...</div>
+      <div id="velocity-legend" hidden>
+        <div class="legend-title" id="velocity-legend-title"></div>
+        <div class="legend-row">
+          <canvas
+            id="velocity-legend-bar"
+            class="legend-bar"
+            width="20"
+            height="150"
+          ></canvas>
+          <div class="legend-labels">
+            <span id="velocity-legend-max"></span>
+            <span id="velocity-legend-mid"></span>
+            <span id="velocity-legend-min"></span>
+          </div>
+        </div>
+      </div>
       <div id="color-legend">
         <div class="legend-title" id="legend-title"></div>
         <div class="legend-row">

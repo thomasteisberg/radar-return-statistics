@@ -13,6 +13,9 @@ import {
   formatScaledValue,
   setOnViewChange,
   isLatLonVisible,
+  VELOCITY_BASEMAP,
+  VELOCITY_LEGEND,
+  velocityColorForFraction,
 } from "./map";
 import { openStore, loadEssentials, loadVariables, StoreData } from "./store";
 
@@ -39,6 +42,13 @@ const legendMin = document.getElementById("legend-min") as HTMLSpanElement;
 const legendCanvas = document.getElementById("legend-bar") as HTMLCanvasElement;
 const legendAdaptiveCb = document.getElementById("legend-adaptive-cb") as HTMLInputElement;
 const showCheckpointsCb = document.getElementById("show-checkpoints-cb") as HTMLInputElement;
+const velocityLegend = document.getElementById("velocity-legend") as HTMLDivElement;
+const velocityLegendTitle = document.getElementById("velocity-legend-title") as HTMLDivElement;
+const velocityLegendCanvas = document.getElementById("velocity-legend-bar") as HTMLCanvasElement;
+const velocityLegendMax = document.getElementById("velocity-legend-max") as HTMLSpanElement;
+const velocityLegendMid = document.getElementById("velocity-legend-mid") as HTMLSpanElement;
+const velocityLegendMin = document.getElementById("velocity-legend-min") as HTMLSpanElement;
+let velocityLegendDrawn = false;
 
 let currentData: StoreData | null = null;
 let currentStore: IcechunkStore | null = null;
@@ -117,6 +127,29 @@ function updateLegend(variableName: string, scale: ReturnType<typeof createColor
   legendMid.textContent = formatScaledValue((scale.vmin + scale.vmax) / 2, varInfo);
   legendMin.textContent = formatScaledValue(scale.vmin, varInfo);
   drawLegend(legendCanvas, scale, varInfo.cmap);
+}
+
+function drawVelocityLegend() {
+  if (velocityLegendDrawn) return;
+  velocityLegendTitle.textContent = `${VELOCITY_LEGEND.label} [${VELOCITY_LEGEND.unit}]`;
+  velocityLegendMax.textContent = String(VELOCITY_LEGEND.max);
+  velocityLegendMid.textContent = String(VELOCITY_LEGEND.mid);
+  velocityLegendMin.textContent = String(VELOCITY_LEGEND.min);
+  const ctx = velocityLegendCanvas.getContext("2d")!;
+  const h = velocityLegendCanvas.height;
+  const w = velocityLegendCanvas.width;
+  for (let y = 0; y < h; y++) {
+    const t = 1 - y / h; // top = fast (white)
+    ctx.fillStyle = velocityColorForFraction(t);
+    ctx.fillRect(0, y, w, 1);
+  }
+  velocityLegendDrawn = true;
+}
+
+function syncVelocityLegend() {
+  const show = basemapSelect.value === VELOCITY_BASEMAP;
+  if (show) drawVelocityLegend();
+  velocityLegend.hidden = !show;
 }
 
 function renderCurrentVariable() {
@@ -266,6 +299,9 @@ async function init() {
       initMap("map", store.hemisphere);
       populateBasemapSelect();
     }
+    // The select reset to a GIBS basemap above; keep the velocity colorbar
+    // in sync with whatever is now selected.
+    syncVelocityLegend();
 
     currentStoreIndex = index;
     currentSnapshotId = undefined;
@@ -292,6 +328,7 @@ async function init() {
 
   basemapSelect.addEventListener("change", () => {
     setBasemap(basemapSelect.value);
+    syncVelocityLegend();
   });
 
   legendAdaptiveCb.addEventListener("change", () => {
