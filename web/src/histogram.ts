@@ -98,6 +98,10 @@ export function renderHistogram(
   legendEl: HTMLElement,
   title: string,
   series: HistSeries[],
+  // true: each season curve independently normalized to unit area.
+  // false: common normalization — season curves scaled by their share of
+  // the pooled sample so heights reflect relative abundance.
+  perSeasonNorm: boolean,
 ): void {
   clearHistogram(legendEl);
   container.replaceChildren();
@@ -122,9 +126,19 @@ export function renderHistogram(
   const step = (xmax - xmin) / (GRID_N - 1);
   const grid = Array.from({ length: GRID_N }, (_, i) => xmin + i * step);
 
+  // Common-norm reference: size of the pooled ("All") sample.
+  const nAll = usable.length;
   const data: uPlot.AlignedData = [
     grid,
-    ...series.map((s) => kde(s.values.filter((v) => !isNaN(v)), grid)),
+    ...series.map((s) => {
+      const vals = s.values.filter((v) => !isNaN(v));
+      const density = kde(vals, grid);
+      // "All" is always unit area; season curves are scaled by their share
+      // of the pooled sample when common-norm is selected.
+      if (perSeasonNorm || s.label === "All" || nAll === 0) return density;
+      const w = vals.length / nAll;
+      return density.map((d) => d * w);
+    }),
   ];
 
   const uSeries: uPlot.Series[] = [

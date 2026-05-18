@@ -281,6 +281,16 @@
         display: none;
       }
 
+      #region-norm {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: #ccc;
+        margin-bottom: 6px;
+        cursor: pointer;
+      }
+
       #region-body {
         display: flex;
         align-items: flex-start;
@@ -393,6 +403,10 @@
       <div id="map"></div>
       <div id="loading-overlay">Loading data from S3...</div>
       <div id="region-panel" hidden>
+        <label id="region-norm">
+          <input type="checkbox" id="region-norm-cb" checked />
+          <span>Normalize each season independently</span>
+        </label>
         <div id="region-body">
           <div id="region-chart"></div>
           <div id="region-legend"></div>

@@ -65,6 +65,7 @@ const clearRegionBtn = document.getElementById("clear-region-btn") as HTMLButton
 const regionPanel = document.getElementById("region-panel") as HTMLDivElement;
 const regionChart = document.getElementById("region-chart") as HTMLDivElement;
 const regionLegend = document.getElementById("region-legend") as HTMLDivElement;
+const regionNormCb = document.getElementById("region-norm-cb") as HTMLInputElement;
 
 // Trace indices inside the drawn polygon, cached so a variable/season change
 // only re-pulls values (the polygon itself is unchanged).
@@ -209,7 +210,13 @@ function updateRegionHistogram(): void {
   series.push({ label: "All", color: "#e8e8e8", values: all });
 
   regionPanel.hidden = false;
-  renderHistogram(regionChart, regionLegend, `${varInfo.label} [${varInfo.unit}]`, series);
+  renderHistogram(
+    regionChart,
+    regionLegend,
+    `${varInfo.label} [${varInfo.unit}]`,
+    series,
+    regionNormCb.checked,
+  );
 }
 
 function onPolygonChanged(): void {
@@ -428,6 +435,9 @@ async function init() {
 
   drawRegionBtn.addEventListener("click", () => startPolygonDraw());
   clearRegionBtn.addEventListener("click", () => clearPolygon());
+  regionNormCb.addEventListener("change", () => {
+    if (hasPolygon()) updateRegionHistogram();
+  });
 
   variableSelect.addEventListener("change", async () => {
     if (!currentData || !currentStore) return;
